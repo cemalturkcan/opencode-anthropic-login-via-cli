@@ -19,27 +19,23 @@ Claude CLI (OAuth token)  -->  Plugin  -->  OpenCode
 - Auto-refreshes when the token is about to expire
 - Syncs credentials to `~/.local/share/opencode/auth.json`
 
-## Install
-
-**1.** Make sure you have:
+## Prerequisites
 
 - [OpenCode](https://github.com/sst/opencode)
 - [Claude CLI](https://github.com/anthropics/claude-code) logged in (`claude auth status`)
 - Claude Pro or Max subscription
 
-**2.** Add the plugin:
+## Install
 
-```bash
-bun add opencode-anthropic-login-via-cli
-```
-
-**3.** Add to your `opencode.json`:
+Add to your `opencode.json`:
 
 ```json
 {
   "plugin": ["opencode-anthropic-login-via-cli"]
 }
 ```
+
+OpenCode installs npm plugins automatically on startup. No `bun add` or `npm install` needed.
 
 That's it. No API key, no provider config needed.
 

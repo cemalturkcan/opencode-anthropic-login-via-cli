@@ -1,6 +1,6 @@
 {
   "name": "opencode-anthropic-login-via-cli",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "OpenCode plugin that syncs your Claude CLI OAuth token to use Anthropic models with your Claude Pro/Max subscription.",
   "type": "module",
   "main": "dist/index.js",
