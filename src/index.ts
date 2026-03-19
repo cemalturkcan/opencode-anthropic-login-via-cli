@@ -38,6 +38,15 @@ async function readJson<T>(p: string): Promise<T | undefined> {
   }
 }
 
+async function hasClaude(): Promise<boolean> {
+  try {
+    await execFileAsync("which", ["claude"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function refreshViaCli(): Promise<void> {
   try {
     await execFileAsync(
@@ -51,6 +60,13 @@ async function refreshViaCli(): Promise<void> {
 const REFRESH_THRESHOLD_MS = 30 * 60 * 1000;
 
 const plugin: Plugin = async () => {
+  const cli = await hasClaude();
+  const creds = await readJson<ClaudeCredentials>(credentialsPath());
+
+  if (!cli || !creds?.claudeAiOauth?.accessToken) {
+    return {};
+  }
+
   let cachedToken: string | undefined;
   let cachedExpiresAt: number | undefined;
   let syncPromise: Promise<void> | null = null;
@@ -99,6 +115,14 @@ const plugin: Plugin = async () => {
   }
 
   return {
+    config: async (config: any): Promise<void> => {
+      const providers = config.provider ?? {};
+      if (!providers.anthropic) {
+        providers.anthropic = { options: { apiKey: "cli-managed" } };
+        config.provider = providers;
+      }
+    },
+
     "session.created": async (): Promise<void> => {
       try {
         await ensureSync();

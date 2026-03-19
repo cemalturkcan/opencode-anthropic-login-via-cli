@@ -2,7 +2,20 @@
 
 Use Anthropic models in [OpenCode](https://github.com/sst/opencode) with your Claude Pro/Max subscription — no API key needed.
 
-This plugin reads your Claude CLI OAuth token and injects it into OpenCode automatically. If the token is expired, it runs `claude` CLI to refresh it.
+## What it does
+
+```
+Claude CLI credentials  ──>  Plugin  ──>  OpenCode Anthropic API calls
+~/.claude/.credentials.json          x-api-key header injection
+```
+
+1. **Startup** — Reads your Claude CLI OAuth token from `~/.claude/.credentials.json`
+2. **Auto-refresh** — If the token is expired, runs `claude` CLI in the background to get a fresh one
+3. **Header injection** — Injects the valid token as `x-api-key` before every Anthropic API call
+4. **Provider auto-config** — Adds `anthropic` provider to OpenCode config automatically, so models appear in the list without any manual setup
+5. **Background renewal** — When token is within 30 minutes of expiry, refreshes proactively in the background
+
+No manual token management. Log into Claude CLI once, and Anthropic models just work in OpenCode.
 
 ## Prerequisites
 
@@ -13,7 +26,6 @@ This plugin reads your Claude CLI OAuth token and injects it into OpenCode autom
 ## Install
 
 ```bash
-# in your project directory
 bun add opencode-anthropic-login-via-cli
 ```
 
@@ -29,7 +41,7 @@ Add to your `opencode.json`:
 }
 ```
 
-Or install from git:
+Or install directly from GitHub:
 
 ```json
 {
@@ -41,14 +53,32 @@ Or install from git:
 }
 ```
 
-## How it works
+That's it. No `provider.anthropic` config needed — the plugin handles everything.
 
-1. On session start, reads `~/.claude/.credentials.json`
-2. If token is expired or about to expire, runs `claude -p . --model claude-haiku-4-5-20250514` to trigger a refresh
-3. Injects the fresh token as `x-api-key` header before every Anthropic API call
-4. Proactively refreshes in the background when token is within 30 minutes of expiry
+## How the flow works
 
-No manual token management needed. Just log into Claude CLI once and use Anthropic models in OpenCode.
+```
+OpenCode starts
+  |
+  v
+Plugin init
+  |-- Claude CLI installed? (which claude)
+  |-- Credentials file exists? (~/.claude/.credentials.json)
+  |-- If either missing -> plugin silently disables itself
+  |
+  v
+Session created
+  |-- Read token from credentials file
+  |-- Token expired? -> Run `claude` CLI to refresh
+  |-- Cache token in memory
+  |-- Write to ~/.local/share/opencode/auth.json
+  |
+  v
+Every Anthropic API call (chat.headers hook)
+  |-- Cached token valid? -> Inject x-api-key immediately
+  |-- Token expiring soon? -> Background refresh (non-blocking)
+  |-- No cached token? -> Read file, sync if needed, then inject
+```
 
 ## License
 
