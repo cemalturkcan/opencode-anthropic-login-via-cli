@@ -42,6 +42,109 @@ const KNOWN_BETA_PREFIXES = [
   "oauth-",
 ];
 
+const IS_WIN = platform() === "win32";
+const CLAUDE_CMD = IS_WIN ? "claude.exe" : "claude";
+
+async function findClaudeBinary(): Promise<string | null> {
+  if (IS_WIN) {
+    // Check common Windows install paths first
+    const candidates = [
+      join(homedir(), ".claude", "local", "claude.exe"),
+      join(homedir(), "AppData", "Local", "Programs", "claude-code", "claude.exe"),
+    ];
+    for (const p of candidates) {
+      try { await readFile(p); return p; } catch {}
+    }
+    // Fallback to PATH
+    try {
+      const { stdout } = await execFileAsync("where", ["claude"], { timeout: 3000 });
+      const first = stdout.trim().split(/\r?\n/)[0];
+      if (first) return first.trim();
+    } catch {}
+    return null;
+  }
+  // Unix
+  try {
+    const { stdout } = await execFileAsync("which", ["claude"], { timeout: 3000 });
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function extractBetaHeadersFromBinary(binaryPath: string): Promise<string[] | null> {
+  if (IS_WIN) {
+    // On Windows, `strings` is not available; read the binary directly and scan for patterns
+    try {
+      const buf = await readFile(binaryPath);
+      const text = buf.toString("utf-8");
+      const pattern = /[a-z]+-(?:[a-z0-9]+-)?20\d{2}-\d{2}-\d{2}|claude-code-\d+/g;
+      const matches = [...new Set(text.match(pattern) || [])];
+      const headers = matches.filter((h) => KNOWN_BETA_PREFIXES.some((p) => h.startsWith(p)));
+      if (!headers.some((h) => h.startsWith("oauth-"))) {
+        headers.push("oauth-2025-04-20");
+      }
+      return headers.length > 0 ? headers : null;
+    } catch {
+      return null;
+    }
+  }
+  // Unix: use strings + grep
+  try {
+    const shellSafe = binaryPath.replace(/'/g, "'\\''");
+    const { stdout } = await execFileAsync(
+      "sh",
+      [
+        "-c",
+        `strings '${shellSafe}' | grep -oE '[a-z]+-[a-z0-9]+-20[0-9]{2}-[0-9]{2}-[0-9]{2}|[a-z]+-20[0-9]{2}-[0-9]{2}-[0-9]{2}|claude-code-[0-9]+' | sort -u`,
+      ],
+      { timeout: 30_000 },
+    );
+    const headers = stdout.trim().split("\n")
+      .filter((h) => h && KNOWN_BETA_PREFIXES.some((p) => h.startsWith(p)));
+    if (!headers.some((h) => h.startsWith("oauth-"))) {
+      headers.push("oauth-2025-04-20");
+    }
+    return headers.length > 0 ? headers : null;
+  } catch {
+    return null;
+  }
+}
+
+async function extractScopesFromBinary(binaryPath: string): Promise<string | null> {
+  if (IS_WIN) {
+    try {
+      const buf = await readFile(binaryPath);
+      const text = buf.toString("utf-8");
+      const pattern = /(?:user|org):[a-z_:]+/g;
+      const matches = [...new Set(text.match(pattern) || [])];
+      const scopes = matches.filter(
+        (s) => !s.includes("this") && !s.endsWith(":") && (s.startsWith("user:") || s.startsWith("org:")),
+      );
+      return scopes.length > 0 ? scopes.join(" ") : null;
+    } catch {
+      return null;
+    }
+  }
+  // Unix
+  try {
+    const shellSafe = binaryPath.replace(/'/g, "'\\''");
+    const { stdout } = await execFileAsync(
+      "sh",
+      [
+        "-c",
+        `strings '${shellSafe}' | grep -oE '(user|org):[a-z_:]+' | sort -u`,
+      ],
+      { timeout: 30_000 },
+    );
+    const scopes = stdout.trim().split("\n")
+      .filter((s) => s && !s.includes("this") && !s.endsWith(":") && (s.startsWith("user:") || s.startsWith("org:")));
+    return scopes.length > 0 ? scopes.join(" ") : null;
+  } catch {
+    return null;
+  }
+}
+
 async function introspectClaudeBinary(): Promise<{
   version: string;
   userAgent: string;
@@ -50,58 +153,25 @@ async function introspectClaudeBinary(): Promise<{
 } | null> {
   try {
     const { stdout: versionOut } = await execFileAsync(
-      "claude",
+      CLAUDE_CMD,
       ["--version"],
       { timeout: 5000 },
     );
     const version = versionOut.trim().split(" ")[0] || DEFAULT_VERSION;
 
-    const { stdout: whichOut } = await execFileAsync("which", ["claude"], {
-      timeout: 3000,
-    });
-    const binaryPath = whichOut.trim();
-    if (!binaryPath) return null;
-
-    const shellSafe = binaryPath.replace(/'/g, "'\\''");
-
-    const { stdout: betaOut } = await execFileAsync(
-      "sh",
-      [
-        "-c",
-        `strings '${shellSafe}' | grep -oE '[a-z]+-[a-z0-9]+-20[0-9]{2}-[0-9]{2}-[0-9]{2}|[a-z]+-20[0-9]{2}-[0-9]{2}-[0-9]{2}|claude-code-[0-9]+' | sort -u`,
-      ],
-      { timeout: 30_000 },
-    );
-
-    const betaHeaders = betaOut
-      .trim()
-      .split("\n")
-      .filter((h) => h && KNOWN_BETA_PREFIXES.some((p) => h.startsWith(p)));
-    if (!betaHeaders.some((h) => h.startsWith("oauth-"))) {
-      betaHeaders.push("oauth-2025-04-20");
+    const binaryPath = await findClaudeBinary();
+    if (!binaryPath) {
+      // Can still return version-only result
+      return {
+        version,
+        userAgent: `claude-cli/${version} (external, cli)`,
+        betaHeaders: DEFAULT_BETA_HEADERS,
+        scopes: DEFAULT_SCOPES,
+      };
     }
 
-    const { stdout: scopeOut } = await execFileAsync(
-      "sh",
-      [
-        "-c",
-        `strings '${shellSafe}' | grep -oE '(user|org):[a-z_:]+' | sort -u`,
-      ],
-      { timeout: 30_000 },
-    );
-
-    const scopeList = scopeOut
-      .trim()
-      .split("\n")
-      .filter(
-        (s) =>
-          s &&
-          !s.includes("this") &&
-          !s.endsWith(":") &&
-          (s.startsWith("user:") || s.startsWith("org:")),
-      );
-    const scopes =
-      scopeList.length > 0 ? scopeList.join(" ") : DEFAULT_SCOPES;
+    const betaHeaders = await extractBetaHeadersFromBinary(binaryPath) ?? DEFAULT_BETA_HEADERS;
+    const scopes = await extractScopesFromBinary(binaryPath) ?? DEFAULT_SCOPES;
 
     return {
       version,
@@ -286,7 +356,7 @@ async function readClaudeCodeCredentials(): Promise<OAuthTokens | null> {
 
 async function refreshViaClaudeCli(): Promise<OAuthTokens | null> {
   try {
-    await execFileAsync("claude", ["-p", ".", "--model", "haiku", "hi"], {
+    await execFileAsync(CLAUDE_CMD, ["-p", ".", "--model", "haiku", "hi"], {
       timeout: 30_000,
       env: { ...process.env, TERM: "dumb" },
     });
@@ -300,7 +370,8 @@ function isExpiringSoon(expiresAt: number): boolean {
 
 async function hasClaude(): Promise<boolean> {
   try {
-    await execFileAsync("which", ["claude"], { timeout: 3000 });
+    const cmd = IS_WIN ? "where" : "which";
+    await execFileAsync(cmd, [IS_WIN ? "claude.exe" : "claude"], { timeout: 3000 });
     return true;
   } catch {
     return false;
