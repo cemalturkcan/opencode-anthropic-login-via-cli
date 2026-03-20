@@ -2,13 +2,34 @@
 
 [OpenCode](https://github.com/sst/opencode) plugin that lets you use Anthropic models with your Claude Pro/Max subscription. No API key required.
 
-## What It Does
+## Features
 
-- **Binary introspection**: Reads the Claude CLI binary to pull current beta headers, OAuth scopes, and version info. Stays in sync with Anthropic's API automatically instead of relying on hardcoded values.
-- **Auto login**: If you have Claude CLI installed and logged in, the plugin picks up your credentials from the system keychain (macOS) or `~/.claude/.credentials.json` (Linux). No extra steps.
-- **Browser login**: Opens an OAuth flow through `claude.ai` for those who don't have the CLI. Log in, paste the code, done.
-- **Token refresh**: Handles expired tokens in the background. Tries the standard refresh flow first, falls back to reading fresh credentials from the CLI if needed.
-- **Request patching**: Adds the right auth headers, beta flags, and tool name prefixes so OpenCode talks to Anthropic's API the same way Claude Code does.
+### Binary Introspection
+
+Reads the Claude CLI binary to extract current beta headers, OAuth scopes, and version info. Stays in sync with Anthropic's API automatically instead of relying on hardcoded values.
+
+### Cross-Platform Support
+
+Works on **macOS**, **Linux**, and **Windows**.
+
+### Auto Login
+
+If you have Claude CLI installed and logged in, the plugin picks up your credentials automatically:
+
+- **macOS**: System Keychain
+- **Linux / Windows**: `~/.claude/.credentials.json`
+
+### Browser Login
+
+Opens an OAuth flow through `claude.ai` for users without the CLI. Log in, paste the code, done.
+
+### Token Refresh
+
+Handles expired tokens automatically. Falls back to the CLI if the standard refresh fails.
+
+### Request Patching
+
+Patches requests so OpenCode talks to Anthropic's API the same way Claude Code does.
 
 ## Install
 
@@ -21,6 +42,14 @@ Add to your `opencode.json`:
 ```
 
 Then open OpenCode and go to **Connect Provider > Anthropic**.
+
+## Auth Methods
+
+| Method  | Label                    | How it works                                            |
+| ------- | ------------------------ | ------------------------------------------------------- |
+| Auto    | Claude Code (auto)       | Reads existing CLI credentials from Keychain/filesystem |
+| Browser | Claude Pro/Max (browser) | OAuth flow via claude.ai with PKCE                      |
+| API Key | API Key (manual)         | Standard Anthropic API key                              |
 
 ## License
 
