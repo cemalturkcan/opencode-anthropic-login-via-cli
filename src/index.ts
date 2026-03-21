@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 import { randomBytes, createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { access, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
@@ -141,8 +141,7 @@ async function findClaudeBinary(): Promise<string | null> {
 async function extractFromBinaryWin(
   binaryPath: string,
 ): Promise<{ betaHeaders: string[] | null; scopes: string | null }> {
-  const BETA_RE =
-    /[a-z]+-(?:[a-z0-9]+-)?20\d{2}-\d{2}-\d{2}|claude-code-\d+/g;
+  const BETA_RE = /[a-z]+-(?:[a-z0-9]+-)?20\d{2}-\d{2}-\d{2}|claude-code-\d+/g;
   const SCOPE_RE = /(?:user|org):[a-z_:]+/g;
 
   const [betaMatches, scopeMatches] = await streamScanBinary(binaryPath, [
@@ -197,9 +196,7 @@ async function extractBetaHeadersUnix(
   }
 }
 
-async function extractScopesUnix(
-  binaryPath: string,
-): Promise<string | null> {
+async function extractScopesUnix(binaryPath: string): Promise<string | null> {
   try {
     const shellSafe = binaryPath.replace(/'/g, "'\\''");
     const { stdout } = await execFileAsync(
@@ -425,6 +422,29 @@ function refreshTokensSafe(refreshToken: string): Promise<OAuthTokens> {
   return refreshInFlight;
 }
 
+// ── Credential JSON Parsing ──────────────────────────────────────────────────
+
+function parseCredentialJson(raw: string): OAuthTokens | null {
+  try {
+    const creds = JSON.parse(raw) as {
+      claudeAiOauth?: {
+        accessToken?: string;
+        refreshToken?: string;
+        expiresAt?: number;
+      };
+    };
+    const oauth = creds.claudeAiOauth;
+    if (!oauth?.accessToken || !oauth?.refreshToken) return null;
+    return {
+      access: oauth.accessToken,
+      refresh: oauth.refreshToken,
+      expires: oauth.expiresAt ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── Claude Code Credential Reader ────────────────────────────────────────────
 
 async function readKeychainEntry(account?: string): Promise<string | null> {
@@ -454,20 +474,7 @@ async function readClaudeCodeCredentials(): Promise<OAuthTokens | null> {
       );
     }
     if (!raw) return null;
-    const creds = JSON.parse(raw) as {
-      claudeAiOauth?: {
-        accessToken?: string;
-        refreshToken?: string;
-        expiresAt?: number;
-      };
-    };
-    const oauth = creds.claudeAiOauth;
-    if (!oauth?.accessToken || !oauth?.refreshToken) return null;
-    return {
-      access: oauth.accessToken,
-      refresh: oauth.refreshToken,
-      expires: oauth.expiresAt ?? 0,
-    };
+    return parseCredentialJson(raw);
   } catch {
     return null;
   }
@@ -497,14 +504,46 @@ async function hasClaude(): Promise<boolean> {
   }
 }
 
+// ── CCS (Claude Code Sessions) Multi-Instance Support ───────────────────────
+
+type CCSInstance = { name: string; credentialsPath: string };
+
+async function discoverCCSInstances(): Promise<CCSInstance[]> {
+  const ccsDir = join(homedir(), ".ccs", "instances");
+  try {
+    const entries = await readdir(ccsDir, { withFileTypes: true });
+    const instances: CCSInstance[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const credPath = join(ccsDir, entry.name, ".credentials.json");
+      try {
+        await access(credPath);
+        instances.push({ name: entry.name, credentialsPath: credPath });
+      } catch {}
+    }
+    return instances;
+  } catch {
+    return [];
+  }
+}
+
+async function readCCSCredentials(
+  credentialsPath: string,
+): Promise<OAuthTokens | null> {
+  try {
+    const raw = await readFile(credentialsPath, "utf-8");
+    if (!raw) return null;
+    return parseCredentialJson(raw);
+  } catch {
+    return null;
+  }
+}
+
 // ── Custom Fetch (Bearer auth + tool renaming + prompt sanitization) ─────────
 // Reads userAgent/betaHeaders from getIntro() on every request so values
 // auto-upgrade once background introspection completes.
 
-function createCustomFetch(
-  getAuth: () => Promise<any>,
-  client: any,
-) {
+function createCustomFetch(getAuth: () => Promise<any>, client: any) {
   return async (input: any, init?: any): Promise<Response> => {
     const { userAgent, betaHeaders } = getIntro();
     const auth = await getAuth();
@@ -677,6 +716,9 @@ const plugin: Plugin = async ({ client }) => {
   // Uses safe defaults until introspection completes.
   startIntro();
 
+  // Discover CCS instances (fast readdir + access, won't block startup)
+  const ccsInstances = await discoverCCSInstances();
+
   return {
     auth: {
       provider: "anthropic",
@@ -744,6 +786,34 @@ const plugin: Plugin = async ({ client }) => {
             };
           },
         },
+        ...ccsInstances.map((instance) => ({
+          type: "oauth" as const,
+          label: `CCS (${instance.name})`,
+          async authorize() {
+            return {
+              url: "https://claude.ai",
+              instructions: `Detecting credentials for CCS instance "${instance.name}"...`,
+              method: "auto" as const,
+              async callback() {
+                const tokens = await readCCSCredentials(
+                  instance.credentialsPath,
+                );
+                if (!tokens) return { type: "failed" as const };
+
+                if (!isExpiringSoon(tokens.expires)) {
+                  return { type: "success" as const, ...tokens };
+                }
+
+                try {
+                  const refreshed = await refreshTokensSafe(tokens.refresh);
+                  return { type: "success" as const, ...refreshed };
+                } catch {}
+
+                return { type: "failed" as const };
+              },
+            };
+          },
+        })),
         {
           type: "oauth" as const,
           label: "Claude Pro/Max (browser)",
