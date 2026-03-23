@@ -28,6 +28,9 @@ const DEFAULT_BETA_HEADERS = [
 
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+// Track current account to detect switches and reset stale state
+let currentRefreshToken: string | null = null;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type OAuthTokens = { access: string; refresh: string; expires: number };
@@ -549,6 +552,12 @@ function createCustomFetch(getAuth: () => Promise<any>, client: any) {
     const auth = await getAuth();
     if (auth.type !== "oauth") return fetch(input, init);
 
+    // Detect account switch — clear stale refresh state from previous account
+    if (auth.refresh && auth.refresh !== currentRefreshToken) {
+      refreshInFlight = null;
+      currentRefreshToken = auth.refresh;
+    }
+
     // Refresh if expired
     if (!auth.access || auth.expires < Date.now()) {
       try {
@@ -675,11 +684,35 @@ function createCustomFetch(getAuth: () => Promise<any>, client: any) {
       }
     } catch {}
 
-    const response = await fetch(reqInput, {
+    let response = await fetch(reqInput, {
       ...requestInit,
       body,
       headers: reqHeaders,
     });
+
+    // On rate limit (429), check if the user switched accounts in the CLI.
+    // If CLI credentials changed, update OpenCode's auth store and retry once.
+    if (response.status === 429) {
+      const cliCreds = await readClaudeCodeCredentials();
+      if (
+        cliCreds &&
+        cliCreds.refresh !== auth.refresh &&
+        !isExpiringSoon(cliCreds.expires)
+      ) {
+        refreshInFlight = null;
+        currentRefreshToken = cliCreds.refresh;
+        await client.auth.set({
+          path: { id: "anthropic" },
+          body: { type: "oauth", ...cliCreds },
+        });
+        reqHeaders.set("authorization", `Bearer ${cliCreds.access}`);
+        response = await fetch(reqInput, {
+          ...requestInit,
+          body,
+          headers: reqHeaders,
+        });
+      }
+    }
 
     // Un-prefix tool names in streaming response
     if (response.body) {
@@ -725,6 +758,11 @@ const plugin: Plugin = async ({ client }) => {
       async loader(getAuth: () => Promise<any>, provider: any) {
         const auth = await getAuth();
         if (auth.type === "oauth") {
+          // Detect account switch — reset stale state so new account starts clean
+          if (auth.refresh && auth.refresh !== currentRefreshToken) {
+            refreshInFlight = null;
+            currentRefreshToken = auth.refresh;
+          }
           // Zero out cost display for Pro/Max subscription
           for (const model of Object.values(provider.models) as any[]) {
             model.cost = { input: 0, output: 0, cache: { read: 0, write: 0 } };
@@ -733,6 +771,11 @@ const plugin: Plugin = async ({ client }) => {
             apiKey: "",
             fetch: createCustomFetch(getAuth, client),
           };
+        }
+        // Switching away from OAuth — clear OAuth state
+        if (currentRefreshToken) {
+          refreshInFlight = null;
+          currentRefreshToken = null;
         }
         return {};
       },
