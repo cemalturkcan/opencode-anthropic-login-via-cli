@@ -987,9 +987,8 @@ const plugin: Plugin = async ({ client }) => {
       if (input.model?.providerID !== "anthropic") return;
       const prefix =
         "You are Claude Code, Anthropic's official CLI for Claude.";
-      if (output.system.length > 0) {
-        output.system.unshift(prefix);
-        output.system[1] = prefix + "\n\n" + output.system[1];
+    if (output.system.length > 0) {
+      output.system[0] = prefix + "\n\n" + output.system[0];
       }
     },
   };
