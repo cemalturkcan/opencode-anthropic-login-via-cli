@@ -1,4 +1,4 @@
-# CLAUDE.md
+# Agent Guide
 
 > Read `.ai/` files for detailed context.
 
@@ -11,6 +11,7 @@
 ```bash
 bun run build       # bundle + emit declarations
 bun run typecheck   # tsc --noEmit
+bun run test        # bun test
 bun run lint        # oxlint + oxfmt --check
 bun run lint:fix    # auto-fix lint + format
 bun run format      # oxfmt --write
@@ -18,16 +19,14 @@ bun run format      # oxfmt --write
 
 ## Context Files
 
-| File                                       | Purpose                                    |
-| ------------------------------------------ | ------------------------------------------ |
-| [.ai/RULES.md](.ai/RULES.md)               | Code style, constraints, patterns          |
-| [.ai/ARCHITECTURE.md](.ai/ARCHITECTURE.md) | Module layout, data flow, design decisions |
+- Rules: `.ai/RULES.md`
+- Architecture: `.ai/ARCHITECTURE.md`
 
 ## Critical Rules
 
 1. No decorative comments, section dividers, or ASCII art
 2. Comments only when the why is non-obvious
-3. No AI-sounding language in code, comments, or commit messages
+3. No AI patterns in code, comments, commits, or PR descriptions — match the repo's existing commit style
 4. All code and comments in English
 5. Run `bun run typecheck && bun run build && bun run lint` before completing any task
 6. `context-1m-2025-08-07` must never be in default betas — it breaks OAuth
