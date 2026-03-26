@@ -49,13 +49,16 @@
 
 ## Testing
 
-- test files go in `src/__tests__/`
-- excluded from tsconfig build via `exclude`
+- test files go in `tests/`
+- excluded from tsconfig build via `exclude: ["tests"]`
 - focus on: error detection, beta selection, SSE boundary buffering, retry logic
 
 ## Git
 
-- commit messages describe technical changes directly
-- no emojis in commit messages
-- no AI wording in commit messages or PR descriptions
+- follow existing commit style: `type: short lowercase description`
+- commit messages describe the technical change directly, nothing else
+- no emojis, no bullet lists, no section headers in commit messages
+- no AI patterns in commit messages or PR descriptions — no "Summary", "What's covered", "Stats", "Changes outside X" headers
+- PR body should read like a developer wrote it: plain text, 1-3 sentences max
+- match the tone and format of the repo's existing commit history
 - PR descriptions in English only
