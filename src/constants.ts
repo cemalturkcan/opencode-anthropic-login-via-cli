@@ -9,14 +9,6 @@ export const TOOL_PREFIX = "mcp_";
 export const DEFAULT_VERSION = "2.1.80";
 export const DEFAULT_SCOPES =
   "org:create_api_key user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code";
-export const DEFAULT_BETA_HEADERS = [
-  "claude-code-20250219",
-  "interleaved-thinking-2025-05-14",
-  "oauth-2025-04-20",
-  "context-management-2025-06-27",
-  "prompt-caching-scope-2026-01-05",
-];
-
 export const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 export const IS_WIN = platform() === "win32";

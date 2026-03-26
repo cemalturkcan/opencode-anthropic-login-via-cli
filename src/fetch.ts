@@ -1,4 +1,4 @@
-import type { OAuthTokens } from "./constants.ts";
+import { REFRESH_BUFFER_MS, type OAuthTokens } from "./constants.ts";
 import { log } from "./logger.ts";
 import { getIntro } from "./introspection.ts";
 import { getBetasForModel, getBetaFlags } from "./model-config.ts";
@@ -48,8 +48,16 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, client: Cli
       log.info("Account switch detected");
     }
 
-    if (!auth.access || (auth.expires && auth.expires < Date.now() + 5 * 60 * 1000)) {
+    if (!auth.access || !auth.expires || auth.expires < Date.now() + REFRESH_BUFFER_MS) {
       await refreshAuth(auth, client);
+    }
+
+    if (!auth.access) {
+      log.error("No valid access token after refresh attempts");
+      return new Response(JSON.stringify({ error: "authentication_failed" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
     }
 
     const reqHeaders = buildHeaders(input, init);

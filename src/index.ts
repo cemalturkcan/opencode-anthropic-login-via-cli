@@ -170,6 +170,7 @@ const plugin: Plugin = async ({ client }) => {
                     log.error("Token exchange failed", {
                       error: String(e),
                     });
+                    exchangePromise = null;
                     return { type: "failed" as const };
                   }
                 })();

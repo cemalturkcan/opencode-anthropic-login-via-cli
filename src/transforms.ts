@@ -67,6 +67,8 @@ export function createToolNameUnprefixStream(
       const { done, value } = await reader.read();
 
       if (done) {
+        const remaining = decoder.decode();
+        buffer += remaining;
         if (buffer) {
           const cleaned = buffer.replace(TOOL_NAME_RE, '"name": "$1"');
           controller.enqueue(encoder.encode(cleaned));
@@ -75,9 +77,9 @@ export function createToolNameUnprefixStream(
         return;
       }
 
-      buffer += decoder.decode(value, { stream: true });
+      const chunk = decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      buffer += chunk;
 
-      // only process complete SSE events (delimited by \n\n)
       const lastBoundary = buffer.lastIndexOf("\n\n");
       if (lastBoundary === -1) return;
 

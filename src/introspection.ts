@@ -12,7 +12,7 @@ import {
   type IntrospectionResult,
 } from "./constants.ts";
 import { log } from "./logger.ts";
-import { BASE_BETAS } from "./model-config.ts";
+import { BASE_BETAS, LONG_CONTEXT_BETAS, getCliVersion, getUserAgent } from "./model-config.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -182,7 +182,8 @@ async function introspectClaudeBinary(): Promise<IntrospectionResult | null> {
     const { stdout: versionOut } = await execFileAsync(CLAUDE_CMD, ["--version"], {
       timeout: 5000,
     });
-    const version = parseVersion(versionOut);
+    const rawVersion = parseVersion(versionOut);
+    const version = getCliVersion(rawVersion);
     log.info("Claude CLI version detected", { version });
 
     const binaryPath = await findClaudeBinary();
@@ -190,7 +191,7 @@ async function introspectClaudeBinary(): Promise<IntrospectionResult | null> {
       log.info("Binary not found on disk, using static defaults");
       return {
         version,
-        userAgent: `claude-cli/${version} (external, cli)`,
+        userAgent: getUserAgent(version),
         betaHeaders: BASE_BETAS,
         scopes: DEFAULT_SCOPES,
       };
@@ -210,10 +211,15 @@ async function introspectClaudeBinary(): Promise<IntrospectionResult | null> {
       ]);
     }
 
+    const longCtxPrefixes = LONG_CONTEXT_BETAS.map((b) => b.replace(/-\d{4}-\d{2}-\d{2}$/, "-"));
+    const filteredBetas = (betaHeaders ?? BASE_BETAS).filter(
+      (h) => !longCtxPrefixes.some((p) => h.startsWith(p)),
+    );
+
     const result: IntrospectionResult = {
       version,
-      userAgent: `claude-cli/${version} (external, cli)`,
-      betaHeaders: betaHeaders ?? BASE_BETAS,
+      userAgent: getUserAgent(version),
+      betaHeaders: filteredBetas.length > 0 ? filteredBetas : BASE_BETAS,
       scopes: scopes ?? DEFAULT_SCOPES,
     };
     log.info("Introspection complete", {

@@ -27,6 +27,7 @@ OpenCode request
   → createCustomFetch (fetch.ts)
     → getAuth() to read current OAuth state
     → proactive token refresh if expiring (credentials.ts)
+    → hard-fail with 401 if no valid token after refresh
     → transformRequestBody: prefix tool names, sanitize system prompt (transforms.ts)
     → getBetasForModel: model-aware beta selection (model-config.ts)
     → build headers: authorization, anthropic-beta, user-agent, x-app
@@ -40,11 +41,11 @@ OpenCode request
 
 ### context-1m-2025-08-07 is opt-in only
 
-This beta header causes Anthropic to reject OAuth requests with "Extra usage is required for long context requests". Post March 13 GA, it's not needed. Only enabled via `ANTHROPIC_ENABLE_1M_CONTEXT=1`.
+This beta header causes Anthropic to reject OAuth requests with "Extra usage is required for long context requests". Post March 13 GA, it's not needed. Only enabled via `ANTHROPIC_ENABLE_1M_CONTEXT=1`. Binary introspection filters out `context-1m-*` betas to prevent reintroduction.
 
 ### Binary introspection as best-effort discovery
 
-The plugin scans the Claude CLI binary for beta headers and OAuth scopes. Static config in model-config.ts serves as source of truth when introspection fails. Env vars override both.
+The plugin scans the Claude CLI binary for beta headers and OAuth scopes. Static config in model-config.ts serves as source of truth when introspection fails. Env vars (`ANTHROPIC_BETA_FLAGS`, `ANTHROPIC_CLI_VERSION`, `ANTHROPIC_USER_AGENT`) override both.
 
 ### Non-retryable 429 detection
 
@@ -52,13 +53,14 @@ Long context and billing 429 errors are terminal — retrying with different cre
 
 ### SSE event boundary buffering
 
-Tool name un-prefixing (removing `mcp_` prefix) operates on complete SSE events delimited by `\n\n`, not arbitrary TCP chunks. This prevents regex matches from failing when a tool name is split across chunks.
+Tool name un-prefixing (removing `mcp_` prefix) operates on complete SSE events delimited by `\n\n` (with `\r\n` normalized to `\n`), not arbitrary TCP chunks. TextDecoder is flushed on stream end to prevent losing split multibyte characters.
 
 ### Credential fallback chain
 
 1. OAuth refresh token → TOKEN_URL
 2. Claude CLI credentials (keychain on macOS, .credentials.json on Linux)
 3. Claude CLI trigger (`claude --print`) to force fresh credentials
+4. Hard-fail with 401 if all paths exhausted (no `Bearer undefined`)
 
 ## Environment Variables
 
