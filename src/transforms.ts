@@ -1,25 +1,16 @@
 import { TOOL_PREFIX } from "./constants.ts";
 import { log } from "./logger.ts";
 
-// ── Body Transformation ──────────────────────────────────────────────────────
-
 interface ParsedBody {
   body: string;
   modelId: string | null;
 }
 
-/**
- * Transform request body:
- * - Sanitize system prompt (OpenCode -> Claude Code)
- * - Prefix tool names with mcp_
- * - Extract model ID for beta selection
- */
 export function transformRequestBody(rawBody: string): ParsedBody {
   try {
     const parsed = JSON.parse(rawBody);
     const modelId: string | null = parsed.model ?? null;
 
-    // Sanitize system prompt: OpenCode -> Claude Code
     if (parsed.system && Array.isArray(parsed.system)) {
       parsed.system = parsed.system.map((item: { type?: string; text?: string }) => {
         if (item.type === "text" && item.text) {
@@ -32,7 +23,6 @@ export function transformRequestBody(rawBody: string): ParsedBody {
       });
     }
 
-    // Prefix tool names with mcp_
     if (parsed.tools && Array.isArray(parsed.tools)) {
       parsed.tools = parsed.tools.map((t: { name?: string }) => ({
         ...t,
@@ -40,7 +30,6 @@ export function transformRequestBody(rawBody: string): ParsedBody {
       }));
     }
 
-    // Prefix tool_use blocks in messages
     if (parsed.messages && Array.isArray(parsed.messages)) {
       parsed.messages = parsed.messages.map(
         (msg: { content?: Array<{ type?: string; name?: string }> }) => {
@@ -64,10 +53,6 @@ export function transformRequestBody(rawBody: string): ParsedBody {
   }
 }
 
-// ── SSE Stream Tool Name Un-Prefixing ────────────────────────────────────────
-// Buffers SSE events at \n\n boundaries for reliable regex replacement.
-// Prevents mid-chunk splits from breaking tool name detection.
-
 const TOOL_NAME_RE = /"name"\s*:\s*"mcp_([^"]+)"/g;
 
 export function createToolNameUnprefixStream(
@@ -82,7 +67,6 @@ export function createToolNameUnprefixStream(
       const { done, value } = await reader.read();
 
       if (done) {
-        // Flush remaining buffer
         if (buffer) {
           const cleaned = buffer.replace(TOOL_NAME_RE, '"name": "$1"');
           controller.enqueue(encoder.encode(cleaned));
@@ -93,9 +77,9 @@ export function createToolNameUnprefixStream(
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Process complete SSE events (delimited by \n\n)
+      // only process complete SSE events (delimited by \n\n)
       const lastBoundary = buffer.lastIndexOf("\n\n");
-      if (lastBoundary === -1) return; // No complete event yet, keep buffering
+      if (lastBoundary === -1) return;
 
       const complete = buffer.slice(0, lastBoundary + 2);
       buffer = buffer.slice(lastBoundary + 2);

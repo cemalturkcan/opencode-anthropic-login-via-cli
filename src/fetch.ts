@@ -14,8 +14,6 @@ import {
 } from "./credentials.ts";
 import { transformRequestBody, createToolNameUnprefixStream } from "./transforms.ts";
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
 interface AuthState {
   type: string;
   access?: string;
@@ -23,12 +21,8 @@ interface AuthState {
   expires?: number;
 }
 
-// Use `any` for the client — the plugin SDK types are complex and change often.
-// Strict typing here would couple us to OpenCode internals unnecessarily.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ClientApi = any;
-
-// ── Long Context Error Detection ─────────────────────────────────────────────
 
 function isLongContextError(body: string): boolean {
   return (
@@ -42,30 +36,24 @@ function isBillingError(body: string): boolean {
   return body.includes("billing_error");
 }
 
-// ── Custom Fetch ─────────────────────────────────────────────────────────────
-
 export function createCustomFetch(getAuth: () => Promise<AuthState>, client: ClientApi) {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const { userAgent, betaHeaders } = getIntro();
     const auth = await getAuth();
     if (auth.type !== "oauth") return fetch(input, init);
 
-    // Detect account switch
     if (auth.refresh && auth.refresh !== getCurrentRefreshToken()) {
       clearRefreshInFlight();
       setCurrentRefreshToken(auth.refresh);
       log.info("Account switch detected");
     }
 
-    // Proactive token refresh
     if (!auth.access || (auth.expires && auth.expires < Date.now() + 5 * 60 * 1000)) {
       await refreshAuth(auth, client);
     }
 
-    // Build headers
     const reqHeaders = buildHeaders(input, init);
 
-    // Transform request body & extract model
     let body = init?.body;
     let modelId: string | null = null;
 
@@ -75,11 +63,9 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, client: Cli
       modelId = transformed.modelId;
     }
 
-    // Model-aware beta selection
     const baseBetas = getBetaFlags(betaHeaders);
     const modelBetas = modelId ? getBetasForModel(modelId, baseBetas) : baseBetas;
 
-    // Merge with incoming betas
     const incoming = (reqHeaders.get("anthropic-beta") || "")
       .split(",")
       .map((b) => b.trim())
@@ -92,7 +78,6 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, client: Cli
     reqHeaders.set("x-app", "cli");
     reqHeaders.delete("x-api-key");
 
-    // Add ?beta=true to messages endpoint
     const reqInput = addBetaParam(input);
 
     log.debug("Outgoing request", {
@@ -106,7 +91,6 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, client: Cli
       headers: reqHeaders,
     });
 
-    // Handle retryable errors
     if (response.status === 429 || response.status === 529 || response.status === 401) {
       response = await handleRetryableError(response, auth, client, reqInput, {
         ...init,
@@ -115,7 +99,6 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, client: Cli
       });
     }
 
-    // Un-prefix tool names in streaming response
     if (response.body) {
       const reader = response.body.getReader();
       const stream = createToolNameUnprefixStream(reader);
@@ -129,8 +112,6 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, client: Cli
     return response;
   };
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
   const reqHeaders = new Headers();
@@ -169,16 +150,13 @@ function addBetaParam(input: RequestInfo | URL): RequestInfo | URL {
       reqUrl.searchParams.set("beta", "true");
       return input instanceof Request ? new Request(reqUrl.toString(), input) : reqUrl;
     }
-  } catch {
-    // URL parsing failed, return original
-  }
+  } catch {}
   return input;
 }
 
 async function refreshAuth(auth: AuthState, client: ClientApi): Promise<void> {
   let refreshed = false;
 
-  // 1) OAuth refresh
   try {
     const fresh = await refreshTokensSafe(auth.refresh!);
     await client.auth.set({
@@ -201,7 +179,6 @@ async function refreshAuth(auth: AuthState, client: ClientApi): Promise<void> {
     });
   }
 
-  // 2) Claude CLI credentials
   if (!refreshed) {
     let kc = await readClaudeCodeCredentials();
     if (!kc || isExpiringSoon(kc.expires)) {
@@ -222,7 +199,6 @@ async function refreshAuth(auth: AuthState, client: ClientApi): Promise<void> {
     }
   }
 
-  // 3) Last resort: trigger CLI refresh
   if (!refreshed) {
     try {
       const kc = await refreshViaClaudeCli();
@@ -249,15 +225,12 @@ async function handleRetryableError(
   reqInput: RequestInfo | URL,
   reqInit: RequestInit,
 ): Promise<Response> {
-  // Read response body to classify the error
   let responseBody = "";
   try {
     responseBody = await response.text();
-  } catch {
-    // Can't read body, fall through to credential retry
-  }
+  } catch {}
 
-  // Long context / billing errors are NOT retryable via credential swap
+  // long context and billing 429s are not fixable by swapping credentials
   if (
     response.status === 429 &&
     (isLongContextError(responseBody) || isBillingError(responseBody))
@@ -280,10 +253,8 @@ async function handleRetryableError(
 
   let freshCreds: OAuthTokens | null = null;
 
-  // Check for account switch
   freshCreds = await findAlternateCredentials(auth.refresh!);
 
-  // Force CLI refresh for 401
   if (!freshCreds && response.status === 401) {
     freshCreds = await refreshViaClaudeCli();
   }
@@ -303,7 +274,6 @@ async function handleRetryableError(
     return fetch(reqInput, { ...reqInit, headers });
   }
 
-  // Return original error if no recovery possible
   return new Response(responseBody, {
     status: response.status,
     statusText: response.statusText,

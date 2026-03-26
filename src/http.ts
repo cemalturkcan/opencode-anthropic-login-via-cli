@@ -1,9 +1,5 @@
 import { log } from "./logger.ts";
 
-/**
- * Fetch with retry — handles 429 (rate limit) and 529 (overloaded).
- * Respects `retry-after` header when present.
- */
 export async function fetchWithRetry(
   url: string,
   init: RequestInit,

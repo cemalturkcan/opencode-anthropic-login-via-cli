@@ -16,9 +16,6 @@ import { BASE_BETAS } from "./model-config.ts";
 
 const execFileAsync = promisify(execFile);
 
-// ── Known Beta Prefixes ──────────────────────────────────────────────────────
-// Used to filter binary scan results to only known Anthropic beta headers.
-
 const KNOWN_BETA_PREFIXES = [
   "claude-code-",
   "interleaved-thinking-",
@@ -28,11 +25,6 @@ const KNOWN_BETA_PREFIXES = [
   "context-1m-",
   "effort-",
 ];
-
-// ── Stream Scanner (Windows) ─────────────────────────────────────────────────
-// Scans a binary file in 256KB chunks to extract regex matches without loading
-// the entire file into memory. Uses latin1 encoding (1:1 byte->char mapping)
-// to safely handle binary content while matching ASCII-only patterns.
 
 const SCAN_CHUNK_SIZE = 256 * 1024;
 const SCAN_OVERLAP = 128;
@@ -57,7 +49,6 @@ async function streamScanBinary(binaryPath: string, patterns: RegExp[]): Promise
           results[i].add(m[0]);
         }
       }
-      // Fix: use `text` for overlap instead of `raw` to preserve boundary context
       tail = text.length > SCAN_OVERLAP ? text.slice(-SCAN_OVERLAP) : text;
     });
 
@@ -65,8 +56,6 @@ async function streamScanBinary(binaryPath: string, patterns: RegExp[]): Promise
     stream.on("error", reject);
   });
 }
-
-// ── Binary Discovery ─────────────────────────────────────────────────────────
 
 export async function findClaudeBinary(): Promise<string | null> {
   if (IS_WIN) {
@@ -78,9 +67,7 @@ export async function findClaudeBinary(): Promise<string | null> {
       try {
         await access(p);
         return p;
-      } catch {
-        // Continue to next candidate
-      }
+      } catch {}
     }
     try {
       const { stdout } = await execFileAsync("where", ["claude"], {
@@ -94,7 +81,6 @@ export async function findClaudeBinary(): Promise<string | null> {
     return null;
   }
 
-  // Unix
   try {
     const { stdout } = await execFileAsync("which", ["claude"], {
       timeout: 3000,
@@ -106,13 +92,9 @@ export async function findClaudeBinary(): Promise<string | null> {
   }
 }
 
-// ── Beta/Scope Extraction ────────────────────────────────────────────────────
-// Improved regex: supports multi-segment beta names (e.g. prompt-caching-scope-2026-01-05)
-
 const BETA_RE =
   /(?<![a-z0-9-])(?:claude-code-\d{8}|[a-z0-9]+(?:-[a-z0-9]+)*-20\d{2}-\d{2}-\d{2})(?![a-z0-9-])/g;
 
-// Improved scope regex: supports digits and hyphens in scope names
 const SCOPE_RE = /(?:user|org):[a-z0-9:_-]+/g;
 
 async function extractFromBinaryWin(
@@ -143,7 +125,6 @@ async function extractBetaHeadersUnix(binaryPath: string): Promise<string[] | nu
       "sh",
       [
         "-c",
-        // Improved regex: supports multi-segment beta names
         `strings '${shellSafe}' | grep -oE '[a-z0-9]+(-[a-z0-9]+)*-20[0-9]{2}-[0-9]{2}-[0-9]{2}|claude-code-[0-9]+' | sort -u`,
       ],
       { timeout: 30_000 },
@@ -170,11 +151,7 @@ async function extractScopesUnix(binaryPath: string): Promise<string | null> {
     const shellSafe = binaryPath.replace(/'/g, "'\\''");
     const { stdout } = await execFileAsync(
       "sh",
-      [
-        "-c",
-        // Improved regex: supports digits and hyphens in scope names
-        `strings '${shellSafe}' | grep -oE '(user|org):[a-z0-9:_-]+' | sort -u`,
-      ],
+      ["-c", `strings '${shellSafe}' | grep -oE '(user|org):[a-z0-9:_-]+' | sort -u`],
       { timeout: 30_000 },
     );
     const scopes = stdout
@@ -195,15 +172,10 @@ async function extractScopesUnix(binaryPath: string): Promise<string | null> {
   }
 }
 
-// ── Version Parsing ──────────────────────────────────────────────────────────
-
 function parseVersion(output: string): string {
-  // Robust: find semver pattern regardless of prefix text like "Claude Code 2.1.80"
   const match = output.match(/\b(\d+\.\d+\.\d+(?:[-+][^\s]+)?)\b/);
   return match?.[1] ?? DEFAULT_VERSION;
 }
-
-// ── Main Introspection ───────────────────────────────────────────────────────
 
 async function introspectClaudeBinary(): Promise<IntrospectionResult | null> {
   try {
@@ -256,9 +228,6 @@ async function introspectClaudeBinary(): Promise<IntrospectionResult | null> {
   }
 }
 
-// ── Lazy Introspection ──────────────────────────────────────────────────────
-// Starts in background during plugin init. Uses safe defaults until complete.
-
 let _intro: IntrospectionResult = {
   version: DEFAULT_VERSION,
   userAgent: `claude-cli/${DEFAULT_VERSION} (external, cli)`,
@@ -267,18 +236,15 @@ let _intro: IntrospectionResult = {
 };
 let _introPromise: Promise<void> | null = null;
 
-/** Non-blocking — returns current values (defaults or introspected) */
 export function getIntro(): IntrospectionResult {
   return _intro;
 }
 
-/** Blocking — waits for introspection to finish, then returns final values */
 export async function awaitIntro(): Promise<IntrospectionResult> {
   if (_introPromise) await _introPromise;
   return _intro;
 }
 
-/** Fire-and-forget — call once at plugin init */
 export function startIntro(): void {
   _introPromise = introspectClaudeBinary()
     .then((result) => {

@@ -17,8 +17,6 @@ import { getIntro } from "./introspection.ts";
 
 const execFileAsync = promisify(execFile);
 
-// ── Mutable State ────────────────────────────────────────────────────────────
-
 let currentRefreshToken: string | null = null;
 let refreshInFlight: Promise<OAuthTokens> | null = null;
 
@@ -38,8 +36,6 @@ export function resetRefreshState(): void {
 export function clearRefreshInFlight(): void {
   refreshInFlight = null;
 }
-
-// ── Token Refresh ────────────────────────────────────────────────────────────
 
 async function refreshTokens(refreshToken: string): Promise<OAuthTokens> {
   const { userAgent } = getIntro();
@@ -94,8 +90,6 @@ export function refreshTokensSafe(refreshToken: string): Promise<OAuthTokens> {
   return refreshInFlight;
 }
 
-// ── Credential Parsing ───────────────────────────────────────────────────────
-
 export function parseCredentialJson(raw: string): OAuthTokens | null {
   try {
     const creds = JSON.parse(raw) as {
@@ -116,8 +110,6 @@ export function parseCredentialJson(raw: string): OAuthTokens | null {
     return null;
   }
 }
-
-// ── Keychain (macOS) ─────────────────────────────────────────────────────────
 
 export async function readKeychainEntry(account?: string): Promise<string | null> {
   try {
@@ -165,8 +157,6 @@ export async function refreshViaClaudeCli(): Promise<OAuthTokens | null> {
   return readClaudeCodeCredentials();
 }
 
-// ── Utilities ────────────────────────────────────────────────────────────────
-
 export function isExpiringSoon(expiresAt: number): boolean {
   return Date.now() + REFRESH_BUFFER_MS >= expiresAt;
 }
@@ -181,8 +171,6 @@ export async function hasClaude(): Promise<boolean> {
   }
 }
 
-// ── CCS Multi-Instance ───────────────────────────────────────────────────────
-
 export type CCSInstance = { name: string; credentialsPath: string };
 
 export async function discoverCCSInstances(): Promise<CCSInstance[]> {
@@ -196,9 +184,7 @@ export async function discoverCCSInstances(): Promise<CCSInstance[]> {
       try {
         await access(credPath);
         instances.push({ name: entry.name, credentialsPath: credPath });
-      } catch {
-        // Credential file doesn't exist for this instance
-      }
+      } catch {}
     }
     log.debug("Discovered CCS instances", { count: instances.length });
     return instances;
@@ -216,8 +202,6 @@ export async function readCCSCredentials(credentialsPath: string): Promise<OAuth
     return null;
   }
 }
-
-// ── Alternate Credential Discovery ───────────────────────────────────────────
 
 export async function findAlternateCredentials(
   currentRefresh: string,

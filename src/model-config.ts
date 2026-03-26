@@ -1,8 +1,5 @@
 import { log } from "./logger.ts";
 
-// ── Static Beta Configuration ────────────────────────────────────────────────
-// Source of truth when binary introspection is unavailable or incomplete.
-
 export const BASE_BETAS = [
   "claude-code-20250219",
   "interleaved-thinking-2025-05-14",
@@ -13,12 +10,9 @@ export const BASE_BETAS = [
 
 export const LONG_CONTEXT_BETAS = ["context-1m-2025-08-07", "interleaved-thinking-2025-05-14"];
 
-/** Per-model beta overrides (matched via substring) */
 const MODEL_OVERRIDES: Record<string, { add?: string[]; remove?: string[] }> = {
   "4-6": { add: ["effort-2025-11-24"] },
 };
-
-// ── Environment Variable Overrides ───────────────────────────────────────────
 
 export function getCliVersion(fallback: string): string {
   return process.env.ANTHROPIC_CLI_VERSION || fallback;
@@ -29,10 +23,6 @@ export function getUserAgent(version: string): string {
   return `claude-cli/${version} (external, cli)`;
 }
 
-/**
- * Resolve beta flags — env var override takes full precedence.
- * Otherwise uses the provided base (from introspection or static defaults).
- */
 export function getBetaFlags(baseBetas?: string[]): string[] {
   if (process.env.ANTHROPIC_BETA_FLAGS) {
     const custom = process.env.ANTHROPIC_BETA_FLAGS.split(",")
@@ -46,10 +36,6 @@ export function getBetaFlags(baseBetas?: string[]): string[] {
   return baseBetas ?? BASE_BETAS;
 }
 
-/**
- * Get betas for a specific model, applying per-model overrides
- * and optionally including long-context betas.
- */
 export function getBetasForModel(
   modelId: string,
   baseBetas: string[],
@@ -57,7 +43,6 @@ export function getBetasForModel(
 ): string[] {
   let betas = [...baseBetas];
 
-  // Long-context betas — opt-in via env var
   const longContextEnabled =
     options?.enableLongContext ||
     process.env.ANTHROPIC_ENABLE_1M_CONTEXT === "1" ||
@@ -69,7 +54,6 @@ export function getBetasForModel(
     }
   }
 
-  // Per-model overrides
   for (const [pattern, overrides] of Object.entries(MODEL_OVERRIDES)) {
     if (modelId.includes(pattern)) {
       if (overrides.add) {

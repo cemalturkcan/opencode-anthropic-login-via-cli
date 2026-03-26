@@ -11,14 +11,11 @@ let logDirReady = false;
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
-/** Redact sensitive values — tokens, JWTs, API keys */
 function redact(value: unknown): unknown {
   if (typeof value === "string") {
-    // JWTs (eyJ...)
     if (value.startsWith("eyJ") && value.length > 40) {
       return `${value.slice(0, 10)}...[REDACTED]`;
     }
-    // Long opaque tokens
     if (value.length > 20 && /^[A-Za-z0-9_-]+$/.test(value)) {
       return `${value.slice(0, 8)}...[REDACTED]`;
     }
@@ -65,7 +62,7 @@ async function writeLog(level: LogLevel, msg: string, data?: Record<string, unkn
 
     await appendFile(LOG_FILE, JSON.stringify(entry) + "\n");
   } catch {
-    // Logging must never break the plugin
+    // logging must never break the plugin
   }
 }
 

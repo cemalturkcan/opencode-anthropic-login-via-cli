@@ -17,8 +17,6 @@ import {
 } from "./credentials.ts";
 import { createCustomFetch } from "./fetch.ts";
 
-// ── Plugin Definition ────────────────────────────────────────────────────────
-
 const plugin: Plugin = async ({ client }) => {
   log.info("Plugin initializing");
   startIntro();
@@ -34,13 +32,12 @@ const plugin: Plugin = async ({ client }) => {
         const auth = await getAuth();
 
         if (auth.type === "oauth") {
-          // Detect account switch — reset stale state
           if (auth.refresh && auth.refresh !== getCurrentRefreshToken()) {
             clearRefreshInFlight();
             setCurrentRefreshToken(auth.refresh);
           }
 
-          // Zero out cost display for Pro/Max subscription
+          // zero out cost display for Pro/Max subscription
           for (const model of Object.values(provider.models) as any[]) {
             model.cost = {
               input: 0,
@@ -55,7 +52,6 @@ const plugin: Plugin = async ({ client }) => {
           };
         }
 
-        // Switching away from OAuth — clear state
         if (getCurrentRefreshToken()) {
           resetRefreshState();
         }
@@ -63,7 +59,6 @@ const plugin: Plugin = async ({ client }) => {
       },
 
       methods: [
-        // ── Claude Code (auto) ───────────────────────────────────────────
         {
           type: "oauth" as const,
           label: "Claude Code (auto)",
@@ -116,7 +111,6 @@ const plugin: Plugin = async ({ client }) => {
           },
         },
 
-        // ── CCS Instances ────────────────────────────────────────────────
         ...ccsInstances.map((instance) => ({
           type: "oauth" as const,
           label: `CCS (${instance.name})`,
@@ -149,7 +143,6 @@ const plugin: Plugin = async ({ client }) => {
           },
         })),
 
-        // ── Browser OAuth (PKCE) ─────────────────────────────────────────
         {
           type: "oauth" as const,
           label: "Claude Pro/Max (browser)",
@@ -186,7 +179,6 @@ const plugin: Plugin = async ({ client }) => {
           },
         },
 
-        // ── API Key (manual) ─────────────────────────────────────────────
         {
           type: "api" as const,
           label: "API Key (manual)",
@@ -195,7 +187,6 @@ const plugin: Plugin = async ({ client }) => {
       ],
     },
 
-    // ── System Prompt Transform ──────────────────────────────────────────────
     "experimental.chat.system.transform": async (
       input: { sessionID?: string; model: any },
       output: { system: string[] },
