@@ -41,7 +41,7 @@ Add to your `opencode.json`:
 
 ```json
 {
-  "plugin": ["opencode-anthropic-login-via-cli"]
+  "plugin": ["opencode-anthropic-login-via-cli@latest"]
 }
 ```
 
