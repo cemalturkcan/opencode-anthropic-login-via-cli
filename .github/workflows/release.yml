@@ -20,7 +20,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.2.9"
 
       - uses: actions/setup-node@v4
         with:
@@ -29,6 +29,8 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      - run: bun run lint
+      - run: bun run typecheck
       - run: bun run build
 
       - name: Semantic Release
