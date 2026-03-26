@@ -64,30 +64,33 @@ export function createToolNameUnprefixStream(
 
   return new ReadableStream({
     async pull(controller) {
-      const { done, value } = await reader.read();
+      while (true) {
+        const { done, value } = await reader.read();
 
-      if (done) {
-        const remaining = decoder.decode();
-        buffer += remaining;
-        if (buffer) {
-          const cleaned = buffer.replace(TOOL_NAME_RE, '"name": "$1"');
-          controller.enqueue(encoder.encode(cleaned));
+        if (done) {
+          const remaining = decoder.decode();
+          buffer += remaining;
+          if (buffer) {
+            const cleaned = buffer.replace(TOOL_NAME_RE, '"name": "$1"');
+            controller.enqueue(encoder.encode(cleaned));
+          }
+          controller.close();
+          return;
         }
-        controller.close();
+
+        const chunk = decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+        buffer += chunk;
+
+        const lastBoundary = buffer.lastIndexOf("\n\n");
+        if (lastBoundary === -1) continue;
+
+        const complete = buffer.slice(0, lastBoundary + 2);
+        buffer = buffer.slice(lastBoundary + 2);
+
+        const cleaned = complete.replace(TOOL_NAME_RE, '"name": "$1"');
+        controller.enqueue(encoder.encode(cleaned));
         return;
       }
-
-      const chunk = decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-      buffer += chunk;
-
-      const lastBoundary = buffer.lastIndexOf("\n\n");
-      if (lastBoundary === -1) return;
-
-      const complete = buffer.slice(0, lastBoundary + 2);
-      buffer = buffer.slice(lastBoundary + 2);
-
-      const cleaned = complete.replace(TOOL_NAME_RE, '"name": "$1"');
-      controller.enqueue(encoder.encode(cleaned));
     },
   });
 }
