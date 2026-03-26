@@ -1,4 +1,4 @@
-# opencode-anthropic-login-via-cli
+# OpenCode Anthropic Auth
 
 [OpenCode](https://github.com/sst/opencode) plugin that lets you use Anthropic models with your Claude Pro/Max subscription. No API key required.
 
