@@ -13,7 +13,10 @@
     "build": "bun build src/index.ts --outdir dist --target bun --format esm && tsc --emitDeclarationOnly",
     "clean": "rm -rf dist",
     "prepare": "bun run build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint && oxfmt --check .",
+    "lint:fix": "oxlint --fix . && oxfmt --write .",
+    "format": "oxfmt --write ."
   },
   "keywords": [
     "opencode",
@@ -33,6 +36,8 @@
   },
   "devDependencies": {
     "bun-types": "^1.3.6",
+    "oxfmt": "^0.42.0",
+    "oxlint": "^1.57.0",
     "typescript": "^5.7.3"
   },
   "release": {
