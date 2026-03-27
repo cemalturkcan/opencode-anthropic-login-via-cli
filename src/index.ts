@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { log } from "./logger.ts";
-import { startIntro, getIntro, awaitIntro } from "./introspection.ts";
+import { startIntro, getIntro, awaitIntro, getLatestCliVersion } from "./introspection.ts";
 import { createAuthorizationRequest, exchangeCodeForTokens } from "./pkce.ts";
 import {
   getCurrentRefreshToken,
@@ -79,9 +79,14 @@ const plugin: Plugin = async ({ client }) => {
               };
             }
 
+            const latestVersion = getLatestCliVersion();
+            const versionWarning = latestVersion
+              ? `\n\n⚠️  Claude CLI is outdated (${getIntro().version} → ${latestVersion}). Run:\n  npm install -g @anthropic-ai/claude-code`
+              : "";
+
             return {
               url: "https://claude.ai",
-              instructions: "Detecting Claude Code credentials...",
+              instructions: `Detecting Claude Code credentials...${versionWarning}`,
               method: "auto" as const,
               async callback() {
                 let tokens = await readClaudeCodeCredentials();

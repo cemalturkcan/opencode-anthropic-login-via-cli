@@ -2,7 +2,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-const DEBUG = process.env.CLAUDE_AUTH_DEBUG === "1" || process.env.CLAUDE_AUTH_DEBUG === "true";
+const DEBUG = process.env.CLAUDE_AUTH_DEBUG !== "0" && process.env.CLAUDE_AUTH_DEBUG !== "false";
 
 const LOG_DIR = join(homedir(), ".local", "share", "opencode");
 const LOG_FILE = join(LOG_DIR, "claude-auth-debug.log");

@@ -234,6 +234,40 @@ async function introspectClaudeBinary(): Promise<IntrospectionResult | null> {
   }
 }
 
+const NPM_REGISTRY_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+async function checkForCliUpdate(currentVersion: string): Promise<string | null> {
+  try {
+    const res = await fetch(NPM_REGISTRY_URL, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { version: string };
+    if (!data.version) return null;
+    if (compareVersions(currentVersion, data.version) < 0) {
+      log.warn("Claude CLI is outdated", {
+        current: currentVersion,
+        latest: data.version,
+      });
+      return data.version;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 let _intro: IntrospectionResult = {
   version: DEFAULT_VERSION,
   userAgent: `claude-cli/${DEFAULT_VERSION} (external, cli)`,
@@ -241,9 +275,14 @@ let _intro: IntrospectionResult = {
   scopes: DEFAULT_SCOPES,
 };
 let _introPromise: Promise<void> | null = null;
+let _latestCliVersion: string | null = null;
 
 export function getIntro(): IntrospectionResult {
   return _intro;
+}
+
+export function getLatestCliVersion(): string | null {
+  return _latestCliVersion;
 }
 
 export async function awaitIntro(): Promise<IntrospectionResult> {
@@ -253,8 +292,9 @@ export async function awaitIntro(): Promise<IntrospectionResult> {
 
 export function startIntro(): void {
   _introPromise = introspectClaudeBinary()
-    .then((result) => {
+    .then(async (result) => {
       if (result) _intro = result;
+      _latestCliVersion = await checkForCliUpdate(_intro.version);
     })
     .catch((e) => {
       log.error("Background introspection failed", { error: String(e) });
