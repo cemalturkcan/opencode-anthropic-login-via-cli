@@ -34,7 +34,7 @@ describe("transformRequestBody", () => {
     expect(parsed.messages[0].content[0].name).toBe("mcp_bash");
   });
 
-  it("replaces OpenCode with Claude Code in system prompts", () => {
+  it("preserves OpenCode identity in system prompts", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       system: [{ type: "text", text: "You are OpenCode assistant." }],
@@ -43,7 +43,7 @@ describe("transformRequestBody", () => {
     const { body } = transformRequestBody(input);
     const parsed = JSON.parse(body);
 
-    expect(parsed.system[0].text).toBe("You are Claude Code assistant.");
+    expect(parsed.system[0].text).toBe("You are OpenCode assistant.");
   });
 
   it("returns raw body and null modelId on invalid JSON", () => {

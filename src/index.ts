@@ -198,7 +198,8 @@ const plugin: Plugin = async ({ client }) => {
       output: { system: string[] },
     ) => {
       if (input.model?.providerID !== "anthropic") return;
-      const prefix = "You are Claude Code, Anthropic's official CLI for Claude.";
+      const prefix =
+        "You are running inside OpenCode, not Claude Code. Use the tools and capabilities exposed by OpenCode in this session, and do not assume Claude Code-specific tool limitations unless they are explicitly present here.";
       if (output.system.length > 0) {
         output.system.unshift(prefix);
       }

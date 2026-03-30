@@ -14,10 +14,7 @@ export function transformRequestBody(rawBody: string): ParsedBody {
     if (parsed.system && Array.isArray(parsed.system)) {
       parsed.system = parsed.system.map((item: { type?: string; text?: string }) => {
         if (item.type === "text" && item.text) {
-          return {
-            ...item,
-            text: item.text.replace(/OpenCode/g, "Claude Code").replace(/opencode/gi, "Claude"),
-          };
+          return item;
         }
         return item;
       });
