@@ -102,7 +102,6 @@ describe("ANTHROPIC_ENABLE_1M_CONTEXT", () => {
     process.env.ANTHROPIC_ENABLE_1M_CONTEXT = "1";
     const betas = getBetasForModel("claude-sonnet-4-20250514", [...BASE_BETAS]);
     expect(betas).toContain("context-1m-2025-08-07");
-    expect(betas).toContain("interleaved-thinking-2025-05-14");
   });
 
   it("adds long context betas when env is 'true'", () => {

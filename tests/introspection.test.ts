@@ -30,7 +30,7 @@ function extractScopes(text: string): string[] {
 
 function parseVersion(output: string): string {
   const match = output.match(/\b(\d+\.\d+\.\d+(?:[-+][^\s]+)?)\b/);
-  return match?.[1] ?? "2.1.80";
+  return match?.[1] ?? "2.1.84";
 }
 
 describe("BETA_RE", () => {
@@ -129,11 +129,11 @@ describe("parseVersion", () => {
   });
 
   it("returns default for empty output", () => {
-    expect(parseVersion("")).toBe("2.1.80");
+    expect(parseVersion("")).toBe("2.1.84");
   });
 
   it("returns default for non-version text", () => {
-    expect(parseVersion("not a version")).toBe("2.1.80");
+    expect(parseVersion("not a version")).toBe("2.1.84");
   });
 });
 
@@ -174,7 +174,7 @@ describe("compareVersions", () => {
 });
 
 describe("context-1m filtering", () => {
-  const LONG_CONTEXT_BETAS = ["context-1m-2025-08-07", "interleaved-thinking-2025-05-14"];
+  const LONG_CONTEXT_BETAS = ["context-1m-2025-08-07"];
 
   function filterLongContextBetas(betas: string[]): string[] {
     const longCtxPrefixes = LONG_CONTEXT_BETAS.map((b) => b.replace(/-\d{4}-\d{2}-\d{2}$/, "-"));
@@ -189,10 +189,10 @@ describe("context-1m filtering", () => {
     expect(result).toContain("oauth-2025-04-20");
   });
 
-  it("removes interleaved-thinking from long context betas", () => {
+  it("preserves interleaved-thinking after long-context filtering", () => {
     const input = ["claude-code-20250219", "interleaved-thinking-2025-05-14", "oauth-2025-04-20"];
     const result = filterLongContextBetas(input);
-    expect(result).not.toContain("interleaved-thinking-2025-05-14");
+    expect(result).toContain("interleaved-thinking-2025-05-14");
   });
 
   it("handles future date versions of context-1m", () => {

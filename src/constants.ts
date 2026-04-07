@@ -1,12 +1,12 @@
 import { platform } from "node:os";
 
 export const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-export const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
-export const TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
-export const REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback";
+export const AUTHORIZE_URL = "https://claude.com/cai/oauth/authorize";
+export const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+export const REDIRECT_URI = "https://platform.claude.com/oauth/code/callback";
 export const TOOL_PREFIX = "mcp_";
 
-export const DEFAULT_VERSION = "2.1.80";
+export const DEFAULT_VERSION = "2.1.84";
 export const DEFAULT_SCOPES =
   "org:create_api_key user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code";
 export const REFRESH_BUFFER_MS = 5 * 60 * 1000;

@@ -8,7 +8,7 @@ export const BASE_BETAS = [
   "prompt-caching-scope-2026-01-05",
 ];
 
-export const LONG_CONTEXT_BETAS = ["context-1m-2025-08-07", "interleaved-thinking-2025-05-14"];
+export const LONG_CONTEXT_BETAS = ["context-1m-2025-08-07"];
 
 const MODEL_OVERRIDES: Record<string, { add?: string[]; remove?: string[] }> = {
   "4-6": { add: ["effort-2025-11-24"] },
