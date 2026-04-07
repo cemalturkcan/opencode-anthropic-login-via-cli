@@ -29,13 +29,49 @@ export function createAuthorizationRequest(scopes: string) {
   return { url: `${AUTHORIZE_URL}?${params}`, verifier };
 }
 
+/**
+ * Parse an OAuth callback input that may arrive in several formats:
+ *
+ *  1. Full callback URL  — https://platform.claude.com/oauth/code/callback?code=ABC&state=XYZ
+ *  2. Query string        — code=ABC&state=XYZ
+ *  3. Hash-separated      — ABC#XYZ   (legacy format)
+ *  4. Plain code          — ABC
+ *
+ * Returns only the authorization code portion, trimmed.
+ */
+export function parseCallbackCode(raw: string): string {
+  const trimmed = raw.trim();
+
+  // 1. Full URL with query parameters
+  try {
+    const url = new URL(trimmed);
+    const code = url.searchParams.get("code");
+    if (code) return code;
+  } catch {
+    // Not a valid URL — fall through to other formats.
+  }
+
+  // 2. Query-string (code=...&state=...)
+  if (trimmed.includes("=")) {
+    const params = new URLSearchParams(trimmed);
+    const code = params.get("code");
+    if (code) return code;
+  }
+
+  // 3. Hash-separated (code#state)
+  const hashIdx = trimmed.indexOf("#");
+  if (hashIdx >= 0) return trimmed.slice(0, hashIdx);
+
+  // 4. Plain authorization code
+  return trimmed;
+}
+
 export async function exchangeCodeForTokens(
   rawCode: string,
   verifier: string,
   userAgent: string,
 ): Promise<OAuthTokens> {
-  const hashIdx = rawCode.indexOf("#");
-  const code = (hashIdx >= 0 ? rawCode.slice(0, hashIdx) : rawCode).trim();
+  const code = parseCallbackCode(rawCode);
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
