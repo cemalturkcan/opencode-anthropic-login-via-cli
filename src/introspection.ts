@@ -95,7 +95,7 @@ export async function findClaudeBinary(): Promise<string | null> {
 const BETA_RE =
   /(?<![a-z0-9-])(?:claude-code-\d{8}|[a-z0-9]+(?:-[a-z0-9]+)*-20\d{2}-\d{2}-\d{2})(?![a-z0-9-])/g;
 
-const SCOPE_RE = /(?:user|org):[a-z0-9:_-]+/g;
+const SCOPE_RE = /(?:user|org):[a-z][a-z0-9_]+(?::[a-z][a-z0-9_]+)*/g;
 
 async function extractFromBinaryWin(
   binaryPath: string,
@@ -151,7 +151,10 @@ async function extractScopesUnix(binaryPath: string): Promise<string | null> {
     const shellSafe = binaryPath.replace(/'/g, "'\\''");
     const { stdout } = await execFileAsync(
       "sh",
-      ["-c", `strings '${shellSafe}' | grep -oE '(user|org):[a-z0-9:_-]+' | sort -u`],
+      [
+        "-c",
+        `strings '${shellSafe}' | grep -oE '(user|org):[a-z][a-z0-9_]+(:[a-z][a-z0-9_]+)*' | sort -u`,
+      ],
       { timeout: 30_000 },
     );
     const scopes = stdout

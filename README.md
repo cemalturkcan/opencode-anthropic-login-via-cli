@@ -25,7 +25,7 @@ If you use [CCS](https://github.com/kaitranntt/ccs) for multiple Claude Code ins
 
 ### Browser Login
 
-Opens an OAuth flow through `claude.ai` for users without the CLI. Log in, paste the code, done.
+Opens an OAuth flow through `claude.com` for users without the CLI. Log in, paste the code, done.
 
 ### Token Refresh
 
@@ -53,7 +53,7 @@ Then open OpenCode and go to **Connect Provider > Anthropic**.
 | ------- | ------------------------ | ------------------------------------------------------- |
 | Auto    | Claude Code (auto)       | Reads existing CLI credentials from Keychain/filesystem |
 | CCS     | CCS (_instance-name_)    | Auto-detects each CCS instance in `~/.ccs/instances/`   |
-| Browser | Claude Pro/Max (browser) | OAuth flow via claude.ai with PKCE                      |
+| Browser | Claude Pro/Max (browser) | OAuth flow via claude.com with PKCE                     |
 | API Key | API Key (manual)         | Standard Anthropic API key                              |
 
 ## License

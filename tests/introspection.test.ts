@@ -30,7 +30,7 @@ function extractScopes(text: string): string[] {
 
 function parseVersion(output: string): string {
   const match = output.match(/\b(\d+\.\d+\.\d+(?:[-+][^\s]+)?)\b/);
-  return match?.[1] ?? "2.1.80";
+  return match?.[1] ?? "2.1.84";
 }
 
 describe("BETA_RE", () => {
@@ -129,11 +129,47 @@ describe("parseVersion", () => {
   });
 
   it("returns default for empty output", () => {
-    expect(parseVersion("")).toBe("2.1.80");
+    expect(parseVersion("")).toBe("2.1.84");
   });
 
   it("returns default for non-version text", () => {
-    expect(parseVersion("not a version")).toBe("2.1.80");
+    expect(parseVersion("not a version")).toBe("2.1.84");
+  });
+});
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+describe("compareVersions", () => {
+  it("returns 0 for equal versions", () => {
+    expect(compareVersions("2.1.80", "2.1.80")).toBe(0);
+  });
+
+  it("returns negative when first is older", () => {
+    expect(compareVersions("2.1.80", "2.2.0")).toBeLessThan(0);
+  });
+
+  it("returns positive when first is newer", () => {
+    expect(compareVersions("3.0.0", "2.9.99")).toBeGreaterThan(0);
+  });
+
+  it("compares major version correctly", () => {
+    expect(compareVersions("1.9.9", "2.0.0")).toBeLessThan(0);
+  });
+
+  it("compares minor version correctly", () => {
+    expect(compareVersions("2.1.80", "2.2.0")).toBeLessThan(0);
+  });
+
+  it("compares patch version correctly", () => {
+    expect(compareVersions("2.1.79", "2.1.80")).toBeLessThan(0);
   });
 });
 
@@ -174,7 +210,7 @@ describe("compareVersions", () => {
 });
 
 describe("context-1m filtering", () => {
-  const LONG_CONTEXT_BETAS = ["context-1m-2025-08-07", "interleaved-thinking-2025-05-14"];
+  const LONG_CONTEXT_BETAS = ["context-1m-2025-08-07"];
 
   function filterLongContextBetas(betas: string[]): string[] {
     const longCtxPrefixes = LONG_CONTEXT_BETAS.map((b) => b.replace(/-\d{4}-\d{2}-\d{2}$/, "-"));
@@ -189,10 +225,10 @@ describe("context-1m filtering", () => {
     expect(result).toContain("oauth-2025-04-20");
   });
 
-  it("removes interleaved-thinking from long context betas", () => {
+  it("preserves interleaved-thinking after long-context filtering", () => {
     const input = ["claude-code-20250219", "interleaved-thinking-2025-05-14", "oauth-2025-04-20"];
     const result = filterLongContextBetas(input);
-    expect(result).not.toContain("interleaved-thinking-2025-05-14");
+    expect(result).toContain("interleaved-thinking-2025-05-14");
   });
 
   it("handles future date versions of context-1m", () => {

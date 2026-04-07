@@ -64,10 +64,10 @@ Tool name un-prefixing (removing `mcp_` prefix) operates on complete SSE events 
 
 ## Environment Variables
 
-| Variable                      | Purpose                               |
-| ----------------------------- | ------------------------------------- |
-| `CLAUDE_AUTH_DEBUG`           | Enable debug logging (`1` or `true`)  |
-| `ANTHROPIC_ENABLE_1M_CONTEXT` | Opt-in to long context betas          |
-| `ANTHROPIC_BETA_FLAGS`        | Override beta flags (comma-separated) |
-| `ANTHROPIC_CLI_VERSION`       | Override detected CLI version         |
-| `ANTHROPIC_USER_AGENT`        | Override User-Agent header            |
+| Variable                      | Purpose                                |
+| ----------------------------- | -------------------------------------- |
+| `CLAUDE_AUTH_DEBUG`           | Disable debug logging (`0` or `false`) |
+| `ANTHROPIC_ENABLE_1M_CONTEXT` | Opt-in to long context betas           |
+| `ANTHROPIC_BETA_FLAGS`        | Override beta flags (comma-separated)  |
+| `ANTHROPIC_CLI_VERSION`       | Override detected CLI version          |
+| `ANTHROPIC_USER_AGENT`        | Override User-Agent header             |
