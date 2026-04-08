@@ -29,13 +29,51 @@ export function createAuthorizationRequest(scopes: string) {
   return { url: `${AUTHORIZE_URL}?${params}`, verifier };
 }
 
+/**
+ * Parse an OAuth callback input that may arrive in several formats:
+ *
+ *  1. Full callback URL  — https://platform.claude.com/oauth/code/callback?code=ABC&state=XYZ
+ *  2. Query string        — code=ABC&state=XYZ
+ *  3. Hash-separated      — ABC#XYZ   (legacy format)
+ *  4. Plain code          — ABC
+ *
+ * Returns only the authorization code portion, trimmed.
+ */
+export function parseCallbackCode(raw: string): string {
+  const trimmed = raw.trim();
+
+  let isUrl = false;
+  try {
+    const url = new URL(trimmed);
+    isUrl = true;
+    const error = url.searchParams.get("error");
+    if (error) throw new Error(`OAuth error: ${error}`);
+    const code = url.searchParams.get("code");
+    if (code !== null) return code;
+    throw new Error("OAuth callback URL is missing a code parameter");
+  } catch (e) {
+    if (isUrl) throw e;
+  }
+
+  if (trimmed.includes("=")) {
+    const defragmented = trimmed.split("#")[0];
+    const params = new URLSearchParams(defragmented);
+    const code = params.get("code");
+    if (code !== null) return code;
+  }
+
+  const hashIdx = trimmed.indexOf("#");
+  if (hashIdx >= 0) return trimmed.slice(0, hashIdx);
+
+  return trimmed;
+}
+
 export async function exchangeCodeForTokens(
   rawCode: string,
   verifier: string,
   userAgent: string,
 ): Promise<OAuthTokens> {
-  const hashIdx = rawCode.indexOf("#");
-  const code = (hashIdx >= 0 ? rawCode.slice(0, hashIdx) : rawCode).trim();
+  const code = parseCallbackCode(rawCode);
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
