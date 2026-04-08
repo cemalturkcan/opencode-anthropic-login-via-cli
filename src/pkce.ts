@@ -42,27 +42,29 @@ export function createAuthorizationRequest(scopes: string) {
 export function parseCallbackCode(raw: string): string {
   const trimmed = raw.trim();
 
-  // 1. Full URL with query parameters
+  let isUrl = false;
   try {
     const url = new URL(trimmed);
+    isUrl = true;
+    const error = url.searchParams.get("error");
+    if (error) throw new Error(`OAuth error: ${error}`);
     const code = url.searchParams.get("code");
-    if (code) return code;
-  } catch {
-    // Not a valid URL — fall through to other formats.
+    if (code !== null) return code;
+    throw new Error("OAuth callback URL is missing a code parameter");
+  } catch (e) {
+    if (isUrl) throw e;
   }
 
-  // 2. Query-string (code=...&state=...)
   if (trimmed.includes("=")) {
-    const params = new URLSearchParams(trimmed);
+    const defragmented = trimmed.split("#")[0];
+    const params = new URLSearchParams(defragmented);
     const code = params.get("code");
-    if (code) return code;
+    if (code !== null) return code;
   }
 
-  // 3. Hash-separated (code#state)
   const hashIdx = trimmed.indexOf("#");
   if (hashIdx >= 0) return trimmed.slice(0, hashIdx);
 
-  // 4. Plain authorization code
   return trimmed;
 }
 

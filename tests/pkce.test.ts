@@ -18,6 +18,14 @@ describe("parseCallbackCode", () => {
     expect(parseCallbackCode("code=abc123&state=xyz")).toBe("abc123");
   });
 
+  it("extracts code from a query string with a hash fragment", () => {
+    expect(parseCallbackCode("code=abc123#state=xyz")).toBe("abc123");
+  });
+
+  it("extracts code from a query string with a leading question mark", () => {
+    expect(parseCallbackCode("?code=abc123&state=xyz")).toBe("abc123");
+  });
+
   it("extracts code from hash-separated format", () => {
     expect(parseCallbackCode("abc123#xyz")).toBe("abc123");
   });
@@ -36,11 +44,26 @@ describe("parseCallbackCode", () => {
     expect(parseCallbackCode(input)).toBe("abc123");
   });
 
-  it("handles URL without code parameter by falling through", () => {
-    const input = "https://example.com/callback?state=xyz";
+  it("throws for a URL without a code parameter", () => {
+    expect(() => parseCallbackCode("https://example.com/callback?state=xyz")).toThrow(
+      "OAuth callback URL is missing a code parameter",
+    );
+  });
 
-    // No code param in URL, no "=" with code key, no hash — returns trimmed input
-    expect(parseCallbackCode(input)).toBe(input.trim());
+  it("throws for a URL with an error parameter", () => {
+    expect(() =>
+      parseCallbackCode("https://example.com/callback?error=access_denied&state=xyz"),
+    ).toThrow("OAuth error: access_denied");
+  });
+
+  it("returns empty string for an empty code in a query string", () => {
+    expect(parseCallbackCode("code=&state=xyz")).toBe("");
+  });
+
+  it("returns empty string for an empty code in a URL", () => {
+    expect(
+      parseCallbackCode("https://platform.claude.com/oauth/code/callback?code=&state=xyz"),
+    ).toBe("");
   });
 
   it("handles empty string", () => {
