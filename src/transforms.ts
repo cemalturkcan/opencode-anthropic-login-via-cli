@@ -10,6 +10,24 @@ const TEXT_REPLACEMENTS: { match: string; replacement: string }[] = [
   { match: "if OpenCode honestly", replacement: "if the assistant honestly" },
 ];
 
+/**
+ * Runtime clarification prepended to the relocated user-message content.
+ *
+ * Because OpenCode's identity line and docs-anchored paragraphs are stripped
+ * from the system prompt by sanitizeSystemText(), the model can lose explicit
+ * awareness of its actual runtime environment. This short prefix restores it
+ * in the one place that survives Anthropic's system[] validator: the first
+ * user message (which is where all non-identity system content is now moved).
+ *
+ * Must NOT contain the exact OPENCODE_IDENTITY string, and must NOT contain
+ * any PARAGRAPH_REMOVAL_ANCHORS, or it would be sanitized away if it ever
+ * entered sanitizeSystemText() via an upstream block.
+ */
+const OPENCODE_RUNTIME_CONTEXT =
+  "Runtime context: You are running inside OpenCode, not the Claude Code CLI. " +
+  "Configuration files are in .opencode/ directories (opencode.json, not claude.json). " +
+  "Refer to OpenCode's own capabilities and tools, not Claude Code's.";
+
 interface ParsedBody {
   body: string;
   modelId: string | null;
@@ -135,6 +153,33 @@ function prependSystemTextToFirstUserMessage(messages: unknown, text: string): u
   return normalizedMessages;
 }
 
+function hasRuntimeContext(messages: unknown): boolean {
+  if (!Array.isArray(messages)) return false;
+  for (const message of messages) {
+    if (!isRecord(message) || message.role !== "user") continue;
+    const content = message.content;
+    if (typeof content === "string") {
+      if (content.includes(OPENCODE_RUNTIME_CONTEXT)) return true;
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        if (
+          isRecord(block) &&
+          typeof block.text === "string" &&
+          block.text.includes(OPENCODE_RUNTIME_CONTEXT)
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function hasUserMessage(messages: unknown): boolean {
+  if (!Array.isArray(messages)) return false;
+  return messages.some((m) => isRecord(m) && m.role === "user");
+}
+
 function relocateSystemText(
   system: unknown,
   messages: unknown,
@@ -143,9 +188,6 @@ function relocateSystemText(
   messages: unknown;
 } {
   const normalizedSystem = normalizeSystem(system);
-  if (normalizedSystem.length <= 1) {
-    return { system: normalizedSystem, messages };
-  }
 
   const movedTexts = normalizedSystem
     .slice(1)
@@ -155,14 +197,25 @@ function relocateSystemText(
         text.length > 0 && text !== CLAUDE_CODE_IDENTITY && text !== LEGACY_CLAUDE_CODE_IDENTITY,
     );
 
-  if (movedTexts.length === 0) {
-    return {
-      system: [normalizedSystem[0]],
-      messages,
-    };
+  // Only inject runtime context when we're already touching a user message —
+  // either one that exists, or one we'll synthesize for relocated system text.
+  // Don't create a synthetic user message just to carry the runtime prefix,
+  // since that would reorder conversations that legitimately start with an
+  // assistant turn (e.g. count_tokens on assistant history).
+  const willTouchUserMessage = movedTexts.length > 0 || hasUserMessage(messages);
+  const alreadyInjected = hasRuntimeContext(messages);
+  const prefix = willTouchUserMessage && !alreadyInjected ? OPENCODE_RUNTIME_CONTEXT : "";
+
+  if (movedTexts.length === 0 && !prefix) {
+    return { system: normalizedSystem, messages };
   }
 
-  const joined = movedTexts.join("\n\n");
+  const joined = [prefix, ...movedTexts].filter((t) => t.length > 0).join("\n\n");
+
+  if (!joined) {
+    return { system: [normalizedSystem[0]], messages };
+  }
+
   return {
     system: [normalizedSystem[0]],
     messages: prependSystemTextToFirstUserMessage(messages, joined),

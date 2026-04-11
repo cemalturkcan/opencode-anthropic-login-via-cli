@@ -3,6 +3,10 @@ import { transformRequestBody, createToolNameUnprefixStream } from "../src/trans
 
 const OPENCODE_IDENTITY = "You are OpenCode, the best coding agent on the planet.";
 const CLAUDE_CODE_IDENTITY = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+const OPENCODE_RUNTIME_CONTEXT =
+  "Runtime context: You are running inside OpenCode, not the Claude Code CLI. " +
+  "Configuration files are in .opencode/ directories (opencode.json, not claude.json). " +
+  "Refer to OpenCode's own capabilities and tools, not Claude Code's.";
 
 describe("transformRequestBody", () => {
   it("prefixes tool names with mcp_", () => {
@@ -55,7 +59,7 @@ describe("transformRequestBody", () => {
 
     expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
     expect(parsed.messages[0].content).toBe(
-      "Follow team guardrails.\n\nPrefer deterministic output.\n\nBuild the handler.",
+      `${OPENCODE_RUNTIME_CONTEXT}\n\nFollow team guardrails.\n\nPrefer deterministic output.\n\nBuild the handler.`,
     );
   });
 
@@ -72,12 +76,12 @@ describe("transformRequestBody", () => {
     expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
     expect(parsed.messages[0]).toEqual({
       role: "user",
-      content: "Carry this instruction forward.",
+      content: `${OPENCODE_RUNTIME_CONTEXT}\n\nCarry this instruction forward.`,
     });
     expect(parsed.messages[1].role).toBe("assistant");
   });
 
-  it("does not leave empty system text blocks after sanitization", () => {
+  it("injects runtime context even when no system text needs relocation", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       system: [{ type: "text", text: OPENCODE_IDENTITY }],
@@ -88,7 +92,7 @@ describe("transformRequestBody", () => {
     const parsed = JSON.parse(body);
 
     expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
-    expect(parsed.messages[0].content).toBe("Hello");
+    expect(parsed.messages[0].content).toBe(`${OPENCODE_RUNTIME_CONTEXT}\n\nHello`);
   });
 
   it("does not stringify unsupported system entries into prompt text", () => {
@@ -108,9 +112,42 @@ describe("transformRequestBody", () => {
     const firstUserText = parsed.messages[0].content as string;
 
     expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
-    expect(firstUserText).toBe("Supported instruction.\n\nHandle request.");
+    expect(firstUserText).toBe(
+      `${OPENCODE_RUNTIME_CONTEXT}\n\nSupported instruction.\n\nHandle request.`,
+    );
     expect(firstUserText).not.toContain("[object Object]");
     expect(firstUserText).not.toContain("Should not leak.");
+  });
+
+  it("does not duplicate runtime context on repeated transformation", () => {
+    const input = JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      system: [{ type: "text", text: "Carry this forward." }],
+      messages: [{ role: "user", content: "First request." }],
+    });
+
+    const firstPass = transformRequestBody(input).body;
+    const secondPass = transformRequestBody(firstPass).body;
+    const parsed = JSON.parse(secondPass);
+
+    const userContent = parsed.messages[0].content as string;
+    const occurrences = userContent.split(OPENCODE_RUNTIME_CONTEXT).length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it("keeps runtime context out of the system array", () => {
+    const input = JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      system: [{ type: "text", text: `${OPENCODE_IDENTITY}\n\nSome instructions.` }],
+      messages: [{ role: "user", content: "Test." }],
+    });
+
+    const { body } = transformRequestBody(input);
+    const parsed = JSON.parse(body);
+
+    expect(parsed.system.length).toBe(1);
+    expect(parsed.system[0].text).toBe(CLAUDE_CODE_IDENTITY);
+    expect(parsed.system[0].text).not.toContain("Runtime context");
   });
 
   it("returns raw body and null modelId on invalid JSON", () => {
