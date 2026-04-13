@@ -5,7 +5,7 @@ const OPENCODE_IDENTITY = "You are OpenCode, the best coding agent on the planet
 const CLAUDE_CODE_IDENTITY = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
 const OPENCODE_RUNTIME_CONTEXT =
   "Runtime context: You are running inside OpenCode, not the Claude Code CLI. " +
-  "Configuration files are in .opencode/ directories (opencode.json, not claude.json). " +
+  "Config is opencode.json (not claude.json), .opencode/ holds agents and plugins. " +
   "Refer to OpenCode's own capabilities and tools, not Claude Code's.";
 
 describe("transformRequestBody", () => {
@@ -81,7 +81,7 @@ describe("transformRequestBody", () => {
     expect(parsed.messages[1].role).toBe("assistant");
   });
 
-  it("injects runtime context even when no system text needs relocation", () => {
+  it("does not inject runtime context when no system text was relocated", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       system: [{ type: "text", text: OPENCODE_IDENTITY }],
@@ -92,7 +92,7 @@ describe("transformRequestBody", () => {
     const parsed = JSON.parse(body);
 
     expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
-    expect(parsed.messages[0].content).toBe(`${OPENCODE_RUNTIME_CONTEXT}\n\nHello`);
+    expect(parsed.messages[0].content).toBe("Hello");
   });
 
   it("does not stringify unsupported system entries into prompt text", () => {

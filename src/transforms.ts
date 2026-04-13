@@ -25,7 +25,7 @@ const TEXT_REPLACEMENTS: { match: string; replacement: string }[] = [
  */
 const OPENCODE_RUNTIME_CONTEXT =
   "Runtime context: You are running inside OpenCode, not the Claude Code CLI. " +
-  "Configuration files are in .opencode/ directories (opencode.json, not claude.json). " +
+  "Config is opencode.json (not claude.json), .opencode/ holds agents and plugins. " +
   "Refer to OpenCode's own capabilities and tools, not Claude Code's.";
 
 interface ParsedBody {
@@ -175,11 +175,6 @@ function hasRuntimeContext(messages: unknown): boolean {
   return false;
 }
 
-function hasUserMessage(messages: unknown): boolean {
-  if (!Array.isArray(messages)) return false;
-  return messages.some((m) => isRecord(m) && m.role === "user");
-}
-
 function relocateSystemText(
   system: unknown,
   messages: unknown,
@@ -197,14 +192,11 @@ function relocateSystemText(
         text.length > 0 && text !== CLAUDE_CODE_IDENTITY && text !== LEGACY_CLAUDE_CODE_IDENTITY,
     );
 
-  // Only inject runtime context when we're already touching a user message —
-  // either one that exists, or one we'll synthesize for relocated system text.
-  // Don't create a synthetic user message just to carry the runtime prefix,
-  // since that would reorder conversations that legitimately start with an
-  // assistant turn (e.g. count_tokens on assistant history).
-  const willTouchUserMessage = movedTexts.length > 0 || hasUserMessage(messages);
+  // Only inject runtime context when OpenCode-specific system text was actually
+  // sanitized or relocated — don't add it to requests that never had OpenCode
+  // prompts in the first place.
   const alreadyInjected = hasRuntimeContext(messages);
-  const prefix = willTouchUserMessage && !alreadyInjected ? OPENCODE_RUNTIME_CONTEXT : "";
+  const prefix = movedTexts.length > 0 && !alreadyInjected ? OPENCODE_RUNTIME_CONTEXT : "";
 
   if (movedTexts.length === 0 && !prefix) {
     return { system: normalizedSystem, messages };
