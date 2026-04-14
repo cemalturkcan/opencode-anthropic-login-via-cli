@@ -1,4 +1,4 @@
-import { TOOL_PREFIX, CLAUDE_CODE_ENTRYPOINT } from "./constants.ts";
+import { TOOL_PREFIX } from "./constants.ts";
 import { buildBillingHeaderValue } from "./cch.ts";
 import { log } from "./logger.ts";
 
@@ -30,14 +30,6 @@ function isRecord(value: unknown): value is JsonRecord {
  */
 function prefixName(name: string): string {
   return `${TOOL_PREFIX}${name.charAt(0).toUpperCase()}${name.slice(1)}`;
-}
-
-/**
- * Reverse prefixName: strip TOOL_PREFIX and restore the original leading case.
- */
-function unprefixName(name: string): string {
-  const stripped = name.slice(TOOL_PREFIX.length);
-  return `${stripped.charAt(0).toLowerCase()}${stripped.slice(1)}`;
 }
 
 function sanitizeSystemText(text: string): string {
@@ -158,7 +150,10 @@ export function transformRequestBody(rawBody: string): ParsedBody {
       parsed.messages.some((m) => isRecord(m) && m.role === "user");
     if (hasUserMessage) {
       const billingHeader = buildBillingHeaderValue(
-        parsed.messages as { role?: string; content?: string | Array<{ type?: string; text?: string }> }[],
+        parsed.messages as {
+          role?: string;
+          content?: string | Array<{ type?: string; text?: string }>;
+        }[],
       );
       if (Array.isArray(parsed.system)) {
         parsed.system.unshift({ type: "text", text: billingHeader });

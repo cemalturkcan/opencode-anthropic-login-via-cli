@@ -41,10 +41,7 @@ export function computeCCH(messageText: string): string {
 export function computeVersionSuffix(messageText: string, version: string): string {
   const chars = CCH_POSITIONS.map((index) => messageText[index] || "0").join("");
 
-  return createHash("sha256")
-    .update(`${CCH_SALT}${chars}${version}`)
-    .digest("hex")
-    .slice(0, 3);
+  return createHash("sha256").update(`${CCH_SALT}${chars}${version}`).digest("hex").slice(0, 3);
 }
 
 /**
