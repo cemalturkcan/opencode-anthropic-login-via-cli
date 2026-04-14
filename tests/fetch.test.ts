@@ -148,7 +148,7 @@ describe("createCustomFetch request-body transformation", () => {
     });
 
     const parsed = JSON.parse(String(fetchInit?.body));
-    expect(parsed.tools[0].name).toBe("mcp_bash");
+    expect(parsed.tools[0].name).toBe("mcp_Bash");
   });
 
   it("transforms JSON body for Request input body", async () => {
@@ -175,6 +175,6 @@ describe("createCustomFetch request-body transformation", () => {
     await customFetch(request);
 
     const parsed = JSON.parse(String(fetchInit?.body));
-    expect(parsed.tools[0].name).toBe("mcp_bash");
+    expect(parsed.tools[0].name).toBe("mcp_Bash");
   });
 });

@@ -1,5 +1,16 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { transformRequestBody, createToolNameUnprefixStream } from "../src/transforms.ts";
+
+mock.module("../src/introspection.ts", () => ({
+  getIntro: () => ({
+    version: "2.1.84",
+    userAgent: "claude-cli/2.1.84",
+    betaHeaders: [],
+    scopes: "",
+  }),
+  startIntro: () => {},
+  awaitIntro: async () => {},
+}));
 
 const OPENCODE_IDENTITY = "You are OpenCode, the best coding agent on the planet.";
 const CLAUDE_CODE_IDENTITY = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
@@ -15,8 +26,8 @@ describe("transformRequestBody", () => {
     const { body, modelId } = transformRequestBody(input);
     const parsed = JSON.parse(body);
 
-    expect(parsed.tools[0].name).toBe("mcp_bash");
-    expect(parsed.tools[1].name).toBe("mcp_read_file");
+    expect(parsed.tools[0].name).toBe("mcp_Bash");
+    expect(parsed.tools[1].name).toBe("mcp_Read_file");
     expect(modelId).toBe("claude-sonnet-4-20250514");
   });
 
@@ -34,10 +45,10 @@ describe("transformRequestBody", () => {
     const { body } = transformRequestBody(input);
     const parsed = JSON.parse(body);
 
-    expect(parsed.messages[0].content[0].name).toBe("mcp_bash");
+    expect(parsed.messages[0].content[0].name).toBe("mcp_Bash");
   });
 
-  it("relocates supported system text into the first user message", () => {
+  it("keeps sanitized system text in the system array with billing header", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       system: [
@@ -53,13 +64,16 @@ describe("transformRequestBody", () => {
     const { body } = transformRequestBody(input);
     const parsed = JSON.parse(body);
 
-    expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
-    expect(parsed.messages[0].content).toBe(
-      "Follow team guardrails.\n\nPrefer deterministic output.\n\nBuild the handler.",
-    );
+    // system[0] = billing header, system[1] = identity, system[2..] = sanitized content
+    expect(parsed.system[0].text).toContain("x-anthropic-billing-header");
+    expect(parsed.system[1].text).toBe(CLAUDE_CODE_IDENTITY);
+    expect(parsed.system[2].text).toBe("Follow team guardrails.");
+    expect(parsed.system[3].text).toBe("Prefer deterministic output.");
+    // User message untouched
+    expect(parsed.messages[0].content).toBe("Build the handler.");
   });
 
-  it("synthesizes a user message when relocation has no user target", () => {
+  it("keeps non-identity system blocks in the system array", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       system: [{ type: "text", text: "Carry this instruction forward." }],
@@ -69,15 +83,15 @@ describe("transformRequestBody", () => {
     const { body } = transformRequestBody(input);
     const parsed = JSON.parse(body);
 
-    expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
-    expect(parsed.messages[0]).toEqual({
-      role: "user",
-      content: "Carry this instruction forward.",
-    });
-    expect(parsed.messages[1].role).toBe("assistant");
+    // No billing header (no user message), identity + instruction in system
+    expect(parsed.system[0].text).toBe(CLAUDE_CODE_IDENTITY);
+    expect(parsed.system[1].text).toBe("Carry this instruction forward.");
+    // Messages unchanged
+    expect(parsed.messages[0].role).toBe("assistant");
+    expect(parsed.messages[0].content).toBe("Ready.");
   });
 
-  it("does not leave empty system text blocks after sanitization", () => {
+  it("removes OpenCode identity via prefix matching", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       system: [{ type: "text", text: OPENCODE_IDENTITY }],
@@ -87,11 +101,30 @@ describe("transformRequestBody", () => {
     const { body } = transformRequestBody(input);
     const parsed = JSON.parse(body);
 
-    expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
+    // Billing header + Claude Code identity (OpenCode identity was removed)
+    expect(parsed.system[0].text).toContain("x-anthropic-billing-header");
+    expect(parsed.system[1].text).toBe(CLAUDE_CODE_IDENTITY);
+    expect(parsed.system.length).toBe(2);
     expect(parsed.messages[0].content).toBe("Hello");
   });
 
-  it("does not stringify unsupported system entries into prompt text", () => {
+  it("removes OpenCode identity variants via prefix matching", () => {
+    const input = JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      system: [{ type: "text", text: "You are OpenCode, a slightly different description." }],
+      messages: [{ role: "user", content: "Test" }],
+    });
+
+    const { body } = transformRequestBody(input);
+    const parsed = JSON.parse(body);
+
+    // The variant should be removed since it starts with "You are OpenCode"
+    expect(parsed.system[0].text).toContain("x-anthropic-billing-header");
+    expect(parsed.system[1].text).toBe(CLAUDE_CODE_IDENTITY);
+    expect(parsed.system.length).toBe(2);
+  });
+
+  it("does not include unsupported system entry types", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",
       system: [
@@ -105,12 +138,14 @@ describe("transformRequestBody", () => {
 
     const { body } = transformRequestBody(input);
     const parsed = JSON.parse(body);
-    const firstUserText = parsed.messages[0].content as string;
 
-    expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
-    expect(firstUserText).toBe("Supported instruction.\n\nHandle request.");
-    expect(firstUserText).not.toContain("[object Object]");
-    expect(firstUserText).not.toContain("Should not leak.");
+    // Billing header + identity + "Supported instruction." only
+    expect(parsed.system[0].text).toContain("x-anthropic-billing-header");
+    expect(parsed.system[1].text).toBe(CLAUDE_CODE_IDENTITY);
+    expect(parsed.system[2].text).toBe("Supported instruction.");
+    expect(parsed.system.length).toBe(3);
+    // User message untouched
+    expect(parsed.messages[0].content).toBe("Handle request.");
   });
 
   it("returns raw body and null modelId on invalid JSON", () => {
@@ -161,7 +196,7 @@ describe("createToolNameUnprefixStream", () => {
   }
 
   it("strips mcp_ prefix from tool names in complete SSE events", async () => {
-    const reader = makeReader(['data: {"name": "mcp_bash", "id": "1"}\n\n']);
+    const reader = makeReader(['data: {"name": "mcp_Bash", "id": "1"}\n\n']);
 
     const stream = createToolNameUnprefixStream(reader);
     const result = await collectStream(stream);
@@ -170,7 +205,7 @@ describe("createToolNameUnprefixStream", () => {
   });
 
   it("buffers across chunk boundaries until \\n\\n", async () => {
-    const reader = makeReader(['data: {"name": "mcp_', 'bash", "id": "1"}\n\n']);
+    const reader = makeReader(['data: {"name": "mcp_', 'Bash", "id": "1"}\n\n']);
 
     const stream = createToolNameUnprefixStream(reader);
     const result = await collectStream(stream);
@@ -179,7 +214,7 @@ describe("createToolNameUnprefixStream", () => {
   });
 
   it("handles \\r\\n\\r\\n boundaries via normalization", async () => {
-    const reader = makeReader(['data: {"name": "mcp_read_file"}\r\n\r\n']);
+    const reader = makeReader(['data: {"name": "mcp_Read_file"}\r\n\r\n']);
 
     const stream = createToolNameUnprefixStream(reader);
     const result = await collectStream(stream);
@@ -188,7 +223,7 @@ describe("createToolNameUnprefixStream", () => {
   });
 
   it("handles multiple events in a single chunk", async () => {
-    const reader = makeReader(['data: {"name": "mcp_a"}\n\ndata: {"name": "mcp_b"}\n\n']);
+    const reader = makeReader(['data: {"name": "mcp_A"}\n\ndata: {"name": "mcp_B"}\n\n']);
 
     const stream = createToolNameUnprefixStream(reader);
     const result = await collectStream(stream);
@@ -198,7 +233,7 @@ describe("createToolNameUnprefixStream", () => {
   });
 
   it("flushes remaining buffer on stream end", async () => {
-    const reader = makeReader(['data: {"name": "mcp_tail"}']);
+    const reader = makeReader(['data: {"name": "mcp_Tail"}']);
 
     const stream = createToolNameUnprefixStream(reader);
     const result = await collectStream(stream);
@@ -207,7 +242,7 @@ describe("createToolNameUnprefixStream", () => {
   });
 
   it("handles empty chunks without error", async () => {
-    const reader = makeReader(["", 'data: {"name": "mcp_x"}\n\n', ""]);
+    const reader = makeReader(["", 'data: {"name": "mcp_X"}\n\n', ""]);
 
     const stream = createToolNameUnprefixStream(reader);
     const result = await collectStream(stream);
