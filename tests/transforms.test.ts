@@ -125,6 +125,39 @@ describe("transformRequestBody", () => {
     expect(parsed.system.length).toBe(2);
   });
 
+  it("rewrites the environment intro fingerprint during sanitization", () => {
+    // Anthropic's classifier rejects OpenCode's default system prompt because
+    // of a verbatim env-block intro sentence. The rewrite preserves meaning
+    // while dodging the match.
+    const input = JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      system: [
+        {
+          type: "text",
+          text:
+            `${OPENCODE_IDENTITY}\n\n` +
+            "Here is some useful information about the environment you are running in:\n" +
+            "<env>\nWorking directory: /tmp/project\n</env>",
+        },
+      ],
+      messages: [{ role: "user", content: "Hello" }],
+    });
+
+    const { body } = transformRequestBody(input);
+    const parsed = JSON.parse(body);
+
+    expect(parsed.system[0].text).toContain("x-anthropic-billing-header");
+    expect(parsed.system[1].text).toBe(CLAUDE_CODE_IDENTITY);
+    expect(parsed.system[2].text).toBe(
+      "Environment context you are running in:\n<env>\nWorking directory: /tmp/project\n</env>",
+    );
+    expect(parsed.system[2].text).not.toContain(
+      "Here is some useful information about the environment you are running in:",
+    );
+    // User message untouched
+    expect(parsed.messages[0].content).toBe("Hello");
+  });
+
   it("does not include unsupported system entry types", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",

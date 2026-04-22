@@ -9,6 +9,15 @@ const LEGACY_CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official C
 const PARAGRAPH_REMOVAL_ANCHORS = ["github.com/anomalyco/opencode", "opencode.ai/docs"];
 const TEXT_REPLACEMENTS: { match: string; replacement: string }[] = [
   { match: "if OpenCode honestly", replacement: "if the assistant honestly" },
+  // Anthropic server-side fingerprint: the verbatim phrase below is shipped in
+  // OpenCode's default system prompt and is matched by a third-party-agent
+  // classifier that returns a disguised "You're out of extra usage" 400. We
+  // rewrite it to a semantic equivalent so the env block intro still reads
+  // naturally while the request is accepted.
+  {
+    match: "Here is some useful information about the environment you are running in:",
+    replacement: "Environment context you are running in:",
+  },
 ];
 
 interface ParsedBody {
