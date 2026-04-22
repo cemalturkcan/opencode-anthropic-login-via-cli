@@ -181,6 +181,17 @@ export function transformRequestBody(rawBody: string): ParsedBody {
 
 const TOOL_NAME_RE = /"name"\s*:\s*"mcp_([^"]+)"/g;
 
+// Names that ship PascalCase in OpenCode and should NOT be lowercased when
+// stripping the mcp_ prefix. StructuredOutput is the canonical example — it
+// is referenced as-is throughout OpenCode, so unprefixing to "structuredOutput"
+// would break downstream matching.
+const PRESERVE_CASE_TOOL_NAMES = new Set(["StructuredOutput"]);
+
+function unprefixToolName(name: string): string {
+  if (PRESERVE_CASE_TOOL_NAMES.has(name)) return name;
+  return `${name.charAt(0).toLowerCase()}${name.slice(1)}`;
+}
+
 export function createToolNameUnprefixStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
 ): ReadableStream<Uint8Array> {
@@ -199,7 +210,7 @@ export function createToolNameUnprefixStream(
           if (buffer) {
             const cleaned = buffer.replace(
               TOOL_NAME_RE,
-              (_m, cap: string) => `"name": "${cap.charAt(0).toLowerCase()}${cap.slice(1)}"`,
+              (_m, cap: string) => `"name": "${unprefixToolName(cap)}"`,
             );
             controller.enqueue(encoder.encode(cleaned));
           }
@@ -218,7 +229,7 @@ export function createToolNameUnprefixStream(
 
         const cleaned = complete.replace(
           TOOL_NAME_RE,
-          (_m, cap: string) => `"name": "${cap.charAt(0).toLowerCase()}${cap.slice(1)}"`,
+          (_m, cap: string) => `"name": "${unprefixToolName(cap)}"`,
         );
         controller.enqueue(encoder.encode(cleaned));
         return;

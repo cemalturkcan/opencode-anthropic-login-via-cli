@@ -275,6 +275,18 @@ describe("createToolNameUnprefixStream", () => {
     expect(result).toContain('"name": "tail"');
   });
 
+  it("preserves StructuredOutput PascalCase when unprefixing", async () => {
+    // OpenCode references this tool name as-is; lowercasing the leading char
+    // ("structuredOutput") would break downstream matching.
+    const reader = makeReader(['data: {"name": "mcp_StructuredOutput"}\n\n']);
+
+    const stream = createToolNameUnprefixStream(reader);
+    const result = await collectStream(stream);
+
+    expect(result).toContain('"name": "StructuredOutput"');
+    expect(result).not.toContain("structuredOutput");
+  });
+
   it("handles empty chunks without error", async () => {
     const reader = makeReader(["", 'data: {"name": "mcp_X"}\n\n', ""]);
 
