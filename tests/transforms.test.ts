@@ -91,6 +91,30 @@ describe("transformRequestBody", () => {
     expect(parsed.messages[0].content).toBe("Hello");
   });
 
+  it("rewrites the environment intro fingerprint during sanitization", () => {
+    const input = JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      system: [
+        {
+          type: "text",
+          text:
+            `${OPENCODE_IDENTITY}\n\n` +
+            "Here is some useful information about the environment you are running in:\n" +
+            "<env>\nWorking directory: /tmp/project\n</env>",
+        },
+      ],
+      messages: [{ role: "user", content: "Hello" }],
+    });
+
+    const { body } = transformRequestBody(input);
+    const parsed = JSON.parse(body);
+
+    expect(parsed.system).toEqual([{ type: "text", text: CLAUDE_CODE_IDENTITY }]);
+    expect(parsed.messages[0].content).toBe(
+      "Environment context you are running in:\n<env>\nWorking directory: /tmp/project\n</env>\n\nHello",
+    );
+  });
+
   it("does not stringify unsupported system entries into prompt text", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",

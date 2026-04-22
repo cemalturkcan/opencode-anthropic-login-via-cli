@@ -8,6 +8,10 @@ const LEGACY_CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official C
 const PARAGRAPH_REMOVAL_ANCHORS = ["github.com/anomalyco/opencode", "opencode.ai/docs"];
 const TEXT_REPLACEMENTS: { match: string; replacement: string }[] = [
   { match: "if OpenCode honestly", replacement: "if the assistant honestly" },
+  {
+    match: "Here is some useful information about the environment you are running in:",
+    replacement: "Environment context you are running in:",
+  },
 ];
 
 interface ParsedBody {
