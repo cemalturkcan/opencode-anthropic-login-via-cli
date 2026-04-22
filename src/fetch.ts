@@ -1,6 +1,6 @@
 import { REFRESH_BUFFER_MS, type OAuthTokens } from "./constants.ts";
 import { log } from "./logger.ts";
-import { getIntro } from "./introspection.ts";
+import { awaitIntro } from "./introspection.ts";
 import { getBetasForModel, getBetaFlags } from "./model-config.ts";
 import {
   getCurrentRefreshToken,
@@ -44,7 +44,10 @@ function isBillingError(body: string): boolean {
 
 export function createCustomFetch(getAuth: () => Promise<AuthState>, client: ClientApi) {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const { userAgent, betaHeaders } = getIntro();
+    // Await introspection so the first request uses the real CLI version
+    // (for billing header, user-agent, betas) instead of DEFAULT_VERSION.
+    // After intro completes, this becomes a no-op (promise is cleared).
+    const { userAgent, betaHeaders } = await awaitIntro();
     const auth = await getAuth();
     if (auth.type !== "oauth") return fetch(input, init);
 
@@ -55,7 +58,7 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, client: Cli
     }
 
     if (!auth.access || !auth.expires || auth.expires < Date.now() + REFRESH_BUFFER_MS) {
-      await refreshAuth(auth, client);
+      await refreshAuth(auth, client, getAuth);
     }
 
     if (!auth.access) {
@@ -189,11 +192,34 @@ function addBetaParam(input: RequestInfo | URL): RequestInfo | URL {
   return input;
 }
 
-async function refreshAuth(auth: AuthState, client: ClientApi): Promise<void> {
+async function refreshAuth(
+  auth: AuthState,
+  client: ClientApi,
+  getAuth: () => Promise<AuthState>,
+): Promise<void> {
   let refreshed = false;
 
+  // Re-read auth right before the refresh POST. The outer snapshot may be
+  // stale if another request rotated the token between getAuth() and here;
+  // posting the stale refresh token would 400 and force our fallback chain
+  // for no good reason.
+  const refreshToken = await (async () => {
+    try {
+      const latest = await getAuth();
+      if (latest?.type === "oauth" && latest.refresh) {
+        if (latest.refresh !== auth.refresh) {
+          log.info("Using rotated refresh token from fresh auth snapshot");
+        }
+        return latest.refresh;
+      }
+    } catch (e) {
+      log.debug("getAuth() re-read failed, using snapshot", { error: String(e) });
+    }
+    return auth.refresh!;
+  })();
+
   try {
-    const fresh = await refreshTokensSafe(auth.refresh!);
+    const fresh = await refreshTokensSafe(refreshToken);
     await client.auth.set({
       path: { id: "anthropic" },
       body: {

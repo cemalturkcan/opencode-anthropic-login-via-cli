@@ -294,10 +294,19 @@ export async function awaitIntro(): Promise<IntrospectionResult> {
 }
 
 export function startIntro(): void {
+  // Resolve _introPromise as soon as local CLI introspection finishes so the
+  // first request is not gated on the npm registry fetch. The update check
+  // runs detached; getLatestCliVersion() returns null until it completes.
   _introPromise = introspectClaudeBinary()
-    .then(async (result) => {
+    .then((result) => {
       if (result) _intro = result;
-      _latestCliVersion = await checkForCliUpdate(_intro.version);
+      void checkForCliUpdate(_intro.version)
+        .then((latest) => {
+          _latestCliVersion = latest;
+        })
+        .catch((e) => {
+          log.debug("CLI update check failed", { error: String(e) });
+        });
     })
     .catch((e) => {
       log.error("Background introspection failed", { error: String(e) });

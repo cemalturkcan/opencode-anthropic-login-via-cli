@@ -10,6 +10,7 @@ export const DEFAULT_VERSION = "2.1.84";
 export const DEFAULT_SCOPES =
   "org:create_api_key user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code";
 export const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+export const CLAUDE_CODE_ENTRYPOINT = "sdk-cli";
 
 export const IS_WIN = platform() === "win32";
 export const CLAUDE_CMD = IS_WIN ? "claude.exe" : "claude";

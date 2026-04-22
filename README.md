@@ -47,6 +47,16 @@ Add to your `opencode.json`:
 
 Then open OpenCode and go to **Connect Provider > Anthropic**.
 
+### Updating
+
+OpenCode caches plugin packages in `~/.cache/opencode/node_modules/`. If you pin to a specific version and later bump it (or re-install the same version after a patch), OpenCode may keep loading the cached copy. If requests still behave like the old version after an update, clear the cache:
+
+```bash
+rm -rf ~/.cache/opencode/node_modules/
+```
+
+Then restart OpenCode — it will re-download the plugin on next launch.
+
 ## Auth Methods
 
 | Method  | Label                    | How it works                                            |
