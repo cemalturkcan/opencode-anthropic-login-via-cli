@@ -152,7 +152,7 @@ const plugin: Plugin = async ({ client }) => {
           label: "Claude Pro/Max (browser)",
           async authorize() {
             const { scopes } = await awaitIntro();
-            const { url, verifier } = createAuthorizationRequest(scopes);
+            const { url, verifier, state } = createAuthorizationRequest(scopes);
             let exchangePromise: Promise<any> | null = null;
             return {
               url,
@@ -167,6 +167,7 @@ const plugin: Plugin = async ({ client }) => {
                     const tokens = await exchangeCodeForTokens(
                       code,
                       verifier,
+                      state,
                       getIntro().userAgent,
                     );
                     return { type: "success" as const, ...tokens };

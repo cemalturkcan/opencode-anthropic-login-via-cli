@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseCallbackCode } from "../src/pkce.ts";
+import { createAuthorizationRequest, parseCallbackCode } from "../src/pkce.ts";
 
 describe("parseCallbackCode", () => {
   it("extracts code from a full callback URL", () => {
@@ -68,5 +68,28 @@ describe("parseCallbackCode", () => {
 
   it("handles empty string", () => {
     expect(parseCallbackCode("")).toBe("");
+  });
+});
+
+describe("createAuthorizationRequest", () => {
+  it("generates independent state and verifier values", () => {
+    const { verifier, state } = createAuthorizationRequest("user:inference");
+
+    expect(verifier).toBeDefined();
+    expect(state).toBeDefined();
+    expect(verifier).not.toBe(state);
+  });
+
+  it("includes state in the authorization URL", () => {
+    const { url, state } = createAuthorizationRequest("user:inference");
+
+    const parsed = new URL(url);
+    expect(parsed.searchParams.get("state")).toBe(state);
+  });
+
+  it("does not include verifier in the authorization URL", () => {
+    const { url, verifier } = createAuthorizationRequest("user:inference");
+
+    expect(url).not.toContain(verifier);
   });
 });

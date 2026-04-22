@@ -15,6 +15,7 @@ function base64url(buf: Buffer): string {
 
 export function createAuthorizationRequest(scopes: string) {
   const verifier = base64url(randomBytes(32));
+  const state = base64url(randomBytes(32));
   const challenge = base64url(createHash("sha256").update(verifier).digest());
   const params = new URLSearchParams({
     code: "true",
@@ -24,9 +25,9 @@ export function createAuthorizationRequest(scopes: string) {
     scope: scopes,
     code_challenge: challenge,
     code_challenge_method: "S256",
-    state: verifier,
+    state,
   });
-  return { url: `${AUTHORIZE_URL}?${params}`, verifier };
+  return { url: `${AUTHORIZE_URL}?${params}`, verifier, state };
 }
 
 /**
@@ -71,6 +72,7 @@ export function parseCallbackCode(raw: string): string {
 export async function exchangeCodeForTokens(
   rawCode: string,
   verifier: string,
+  state: string,
   userAgent: string,
 ): Promise<OAuthTokens> {
   const code = parseCallbackCode(rawCode);
@@ -80,7 +82,7 @@ export async function exchangeCodeForTokens(
     code_verifier: verifier,
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
-    state: verifier,
+    state,
   });
 
   log.info("Exchanging authorization code for tokens");
