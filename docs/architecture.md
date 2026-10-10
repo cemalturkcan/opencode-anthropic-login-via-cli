@@ -47,7 +47,7 @@ V1 installs `createCustomFetch` through the auth loader. V2 registers `http.requ
 4. Add `?beta=true` to `/v1/messages` and apply `ANTHROPIC_BASE_URL`.
 5. Restore tool names in streamed and non-streamed responses.
 
-V1 retries 401, 429 and 529 once with alternate CLI or CCS credentials. V2 replays a 429 once with another logged-in OAuth account and pins the session to it until the first account's reset time. Terminal billing and long-context 429s never switch accounts.
+V1 retries 401, 429 and 529 once with alternate CLI or CCS credentials. V2 replays a 429 once with another logged-in OAuth account and keeps using it while the limited account cools down until its reset time, for at least thirty seconds. Terminal billing and long-context 429s never switch accounts.
 
 ## Decisions
 
@@ -55,6 +55,7 @@ V1 retries 401, 429 and 529 once with alternate CLI or CCS credentials. V2 repla
 - **Claude Code identity is captured, not scanned.** Betas, headers, scopes and the billing block match a request captured from Claude Code 2.1.296. Only the version comes from the installed CLI, and it is never reported lower than 2.1.296 so newer models are not rejected with `claude_code_version_too_old`.
 - **The billing block has no `cch`.** Claude Code 2.1.296 sends `cc_version` and `cc_entrypoint` only; the version fingerprint skips `<system-reminder>` blocks.
 - **Prompt caching uses the one hour TTL** like Claude Code on subscriptions. `ANTHROPIC_PROMPT_CACHE_TTL=5m` opts out. No keep-alive requests are sent.
+- **PKCE uses an independent `state`.** The `state` sent to claude.com is a separate random value, never the `code_verifier`, and a pasted code carrying a different `state` is rejected before the token exchange.
 - **Refreshes are deduplicated per refresh token,** so concurrent refreshes of different accounts never share a result.
 - **V2 pricing follows the active connection** on every request, so switching between OAuth and an API key updates displayed costs.
 - **The migrated V1 method id `oauth`** is registered only when V2 holds a credential imported from V1, so that credential keeps refreshing without cluttering the login picker.

@@ -1,55 +1,28 @@
 # OpenCode Anthropic Auth
 
-[OpenCode](https://opencode.ai) plugin that lets you use Anthropic models with your Claude Pro/Max subscription. No API key required.
-
-## Features
-
-### Claude Code Version
-
-Reads the installed Claude CLI version and reports it, or 2.1.296 when the CLI is missing or older. Login instructions warn when the installed CLI is outdated.
-
-### Cross-Platform Support
-
-Works on **macOS**, **Linux**, and **Windows**.
-
-### Auto Login
-
-If you have Claude CLI installed and logged in, the plugin picks up your credentials automatically:
-
-- **macOS**: System Keychain
-- **Linux / Windows**: `~/.claude/.credentials.json`
-
-### CCS Support
-
-If you use [CCS](https://github.com/kaitranntt/ccs) for multiple Claude Code instances, each instance in `~/.ccs/instances/` is detected and shows up as a separate auth method.
-
-### Browser Login
-
-Opens an OAuth flow through `claude.com` for users without the CLI. Log in, paste the code, done.
-
-### Token Refresh
-
-Handles expired tokens automatically. When a refresh fails, the plugin falls back to valid Claude CLI credentials only when they belong to the same account: always for the Claude Code method, for browser logins whose account matches, and for credentials migrated from V1. CCS accounts are never replaced.
-
-### Request Patching
-
-Patches requests so OpenCode talks to Anthropic's API the same way Claude Code 2.1.296 does: the same betas, headers, user agent, billing block, session id and account metadata. The reported CLI version is the installed one or 2.1.296, whichever is newer.
-
-### Prompt Caching
-
-Upgrades OpenCode's cache breakpoints to the one hour TTL that Claude Code uses on subscriptions, so a pause or a long tool run does not drop the cache after five minutes.
-
-### Multiple Accounts (OpenCode V2)
-
-Every login is a separate V2 account labeled with its email. When an account hits a rate limit, the request is replayed once with another logged-in account and the session stays on it until the first account's limit resets. Billing and long-context limits never switch accounts.
-
-## Compatibility
-
-Supports OpenCode V1 (1.18.29+) and V2 (plugin SDK 2.0.26). On V2, credentials migrated from V1 keep refreshing, and rate-limited requests can move to another logged-in account as described above.
+[OpenCode](https://opencode.ai) plugin that lets you use Anthropic models with your Claude Pro/Max subscription. No API key required. Works with OpenCode V1 and V2 on macOS, Linux and Windows.
 
 ## Install
 
-Add to your `opencode.json`:
+### OpenCode V2
+
+Add the plugin to `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "plugins": ["opencode-anthropic-login-via-cli@latest"]
+}
+```
+
+Then log in, either from the TUI with `/connect` → **Anthropic**, or from the shell:
+
+```bash
+opencode auth login anthropic --method claude-cli
+```
+
+### OpenCode V1
+
+Add the plugin to `opencode.json`:
 
 ```json
 {
@@ -59,45 +32,62 @@ Add to your `opencode.json`:
 
 Then open OpenCode and go to **Connect Provider > Anthropic**.
 
-### Updating
+## Login Methods
 
-OpenCode caches plugin packages in `~/.cache/opencode/node_modules/`. If you pin to a specific version and later bump it (or re-install the same version after a patch), OpenCode may keep loading the cached copy. If requests still behave like the old version after an update, clear the cache:
+| Label                    | How it works                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Claude Code (auto)       | Uses the Claude CLI login: the macOS Keychain, or `~/.claude/.credentials.json` on Linux and Windows |
+| CCS (_instance-name_)    | One method per [CCS](https://github.com/kaitranntt/ccs) instance found in `~/.ccs/instances/`        |
+| Claude Pro/Max (browser) | OAuth login on claude.com with PKCE; paste the code shown after you authorize                        |
+| API Key (manual)         | A regular Anthropic API key, without any of the subscription handling below                          |
 
-```bash
-rm -rf ~/.cache/opencode/node_modules/
-```
+When OpenCode V2 has imported an Anthropic login from V1, a **Claude Pro/Max (migrated from OpenCode V1)** method also appears so that login keeps refreshing. It stays hidden otherwise.
 
-Then restart OpenCode. It re-downloads the plugin on the next launch.
+## What It Does
 
-### Local Build
+**Requests look like Claude Code.** Requests carry the same betas, headers, user agent, billing block, session id and account metadata as Claude Code 2.1.296. The reported version is the installed Claude CLI version, or 2.1.296 if the CLI is missing or older. The login screen warns when the installed CLI is outdated.
 
-Run `bun run build` and point OpenCode at the output. OpenCode V1 takes the file (`"plugin": ["file:///path/to/repo/dist/index.js"]`); OpenCode V2 takes the directory (`"plugins": ["/path/to/repo/dist"]`).
+**Tokens refresh on their own.** Expired tokens are refreshed automatically. If a refresh fails, the plugin falls back to the Claude CLI login, but only when it belongs to the same account. CCS accounts are never swapped for another account.
 
-## Auth Methods
+**The prompt cache lasts an hour.** Cache breakpoints get the one hour TTL Claude Code uses on subscriptions, so a pause or a long tool run does not throw the cache away after five minutes.
 
-| Method  | Label                    | How it works                                            |
-| ------- | ------------------------ | ------------------------------------------------------- |
-| Auto    | Claude Code (auto)       | Reads existing CLI credentials from Keychain/filesystem |
-| CCS     | CCS (_instance-name_)    | Auto-detects each CCS instance in `~/.ccs/instances/`   |
-| Browser | Claude Pro/Max (browser) | OAuth flow via claude.com with PKCE                     |
-| API Key | API Key (manual)         | Standard Anthropic API key                              |
+**Rate limits move to another account.** On V2 every login is a separate account labeled with its email. When one account hits a rate limit, the request is retried once with another logged-in account, and requests keep using that account until the first one's limit resets. On V1 the plugin falls back to other Claude CLI or CCS logins the same way. Billing and long-context limits never switch accounts.
 
-When OpenCode V2 has imported an Anthropic login from V1, the plugin also registers **Claude Pro/Max (migrated from OpenCode V1)** so that login keeps refreshing. It is hidden when there is no such login; new logins should use one of the methods above.
+**Subscription models cost nothing.** While an OAuth login is active, Anthropic model prices show as zero.
 
 ## Environment Variables
 
 | Variable                      | Purpose                                                  |
 | ----------------------------- | -------------------------------------------------------- |
-| `CLAUDE_AUTH_DEBUG`           | `0` or `false` disables the debug log                    |
-| `ANTHROPIC_ENABLE_1M_CONTEXT` | Opt in to long-context betas                             |
+| `ANTHROPIC_PROMPT_CACHE_TTL`  | `5m` keeps OpenCode's five minute cache instead of `1h`  |
+| `ANTHROPIC_ENABLE_1M_CONTEXT` | `1` adds the long-context beta for models that need it   |
 | `ANTHROPIC_BETA_FLAGS`        | Replace the beta flags (comma-separated)                 |
-| `ANTHROPIC_CLI_VERSION`       | Override the detected CLI version                        |
+| `ANTHROPIC_CLI_VERSION`       | Override the reported Claude CLI version                 |
 | `ANTHROPIC_USER_AGENT`        | Override the user agent                                  |
 | `ANTHROPIC_BASE_URL`          | Send requests to another origin, such as a local proxy   |
-| `ANTHROPIC_INSECURE`          | Skip TLS verification for `ANTHROPIC_BASE_URL` (V1 only) |
-| `ANTHROPIC_PROMPT_CACHE_TTL`  | `5m` keeps OpenCode's 5 minute cache; default is `1h`    |
+| `ANTHROPIC_INSECURE`          | `1` skips TLS verification for `ANTHROPIC_BASE_URL` (V1) |
+| `CLAUDE_AUTH_DEBUG`           | `0` turns off the debug log                              |
 
-The debug log is written to `~/.local/share/opencode/claude-auth-debug.log`.
+The debug log lives at `~/.local/share/opencode/claude-auth-debug.log`. Tokens are redacted.
+
+## Troubleshooting
+
+**An update does not take effect.** OpenCode caches plugin packages. Clear the cache and restart OpenCode:
+
+```bash
+rm -rf ~/.cache/opencode/node_modules/
+```
+
+On V2, also restart the background server with `opencode service restart`.
+
+## Development
+
+```bash
+bun install
+bun run check   # format, lint, typecheck, build and tests with coverage
+```
+
+To try a local build, point OpenCode at `dist`. V1 takes the file (`"plugin": ["file:///path/to/repo/dist/index.js"]`), V2 takes the directory (`"plugins": ["/path/to/repo/dist"]`). Conventions and architecture are in [`AGENTS.md`](AGENTS.md) and [`docs/`](docs).
 
 ## License
 
