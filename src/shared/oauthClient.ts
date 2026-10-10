@@ -1,0 +1,223 @@
+import { createHash, randomBytes } from "node:crypto";
+import {
+  authorizeUrl,
+  oauthClientId,
+  oauthScopes,
+  redirectUri,
+  refreshScopes,
+  tokenUrl,
+  type OAuthTokens,
+} from "./constants.ts";
+import { fetchWithRetry } from "./http.ts";
+import { getIntro } from "./introspection.ts";
+import { isJsonNumber, isJsonObject, isJsonString, type JsonValue } from "./json.ts";
+import { log } from "./logger.ts";
+
+export type AuthorizationRequest = { url: string; verifier: string; state: string };
+export type PendingAuthorization = Pick<AuthorizationRequest, "verifier" | "state">;
+type TokenRequestParams = Record<string, string>;
+
+const refreshesInFlight = new Map<string, Promise<OAuthTokens>>();
+
+function base64url(buffer: Buffer): string {
+  return buffer.toString("base64url");
+}
+
+export function createAuthorizationRequest(): AuthorizationRequest {
+  const verifier = base64url(randomBytes(32));
+  const state = base64url(randomBytes(32));
+  const challenge = base64url(createHash("sha256").update(verifier).digest());
+  const params = new URLSearchParams({
+    code: "true",
+    response_type: "code",
+    client_id: oauthClientId,
+    redirect_uri: redirectUri,
+    scope: oauthScopes,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state,
+  });
+  return { url: `${authorizeUrl}?${params}`, verifier, state };
+}
+
+function codeFromCallbackUrl(input: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    return null;
+  }
+
+  const error = url.searchParams.get("error");
+  if (error) throw new Error(`OAuth error: ${error}`);
+  const code = url.searchParams.get("code");
+  if (code === null) throw new Error("OAuth callback URL is missing a code parameter");
+  return code;
+}
+
+export function parseCallbackCode(raw: string): string {
+  const trimmed = raw.trim();
+
+  const urlCode = codeFromCallbackUrl(trimmed);
+  if (urlCode !== null) return urlCode;
+
+  if (trimmed.includes("=")) {
+    const queryCode = new URLSearchParams(trimmed.split("#")[0]).get("code");
+    if (queryCode !== null) return queryCode;
+  }
+
+  const hashIndex = trimmed.indexOf("#");
+  return hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed;
+}
+
+function stateFromCallbackUrl(input: string): string | null | undefined {
+  try {
+    return new URL(input).searchParams.get("state");
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseCallbackState(raw: string): string | null {
+  const trimmed = raw.trim();
+
+  const urlState = stateFromCallbackUrl(trimmed);
+  if (urlState !== undefined) return urlState;
+
+  const [query, fragment] = trimmed.split("#");
+  if (query.includes("=")) {
+    const queryState = new URLSearchParams(query).get("state");
+    if (queryState !== null) return queryState;
+    return fragment === undefined ? null : new URLSearchParams(fragment).get("state");
+  }
+  return fragment ?? null;
+}
+
+function describeFailure(response: Response, body: string): string {
+  const statusText = response.statusText ? ` ${response.statusText}` : "";
+  const detail = body ? `: ${body}` : "";
+  return `${response.status}${statusText}${detail}`;
+}
+
+const defaultTokenLifetimeSeconds = 3600;
+
+function parseTokenResponse(body: JsonValue, previousRefresh: string | null): OAuthTokens | null {
+  if (!isJsonObject(body) || !isJsonString(body.access_token)) return null;
+  const refresh = isJsonString(body.refresh_token) ? body.refresh_token : previousRefresh;
+  if (!refresh) return null;
+  const lifetime = isJsonNumber(body.expires_in) ? body.expires_in : defaultTokenLifetimeSeconds;
+  return { access: body.access_token, refresh, expires: Date.now() + lifetime * 1000 };
+}
+
+async function postTokenRequest(
+  params: TokenRequestParams,
+  userAgent: string,
+  failurePrefix: string,
+): Promise<OAuthTokens> {
+  const response = await fetchWithRetry(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": userAgent },
+    body: JSON.stringify({ ...params, client_id: oauthClientId }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new TokenRequestError(`${failurePrefix}: ${describeFailure(response, body)}`, body);
+  }
+
+  const tokens = parseTokenResponse(await response.json(), params.refresh_token ?? null);
+  if (!tokens) throw new Error(`${failurePrefix}: unexpected token response`);
+  return tokens;
+}
+
+export async function exchangeCodeForTokens(
+  rawCode: string,
+  pending: PendingAuthorization,
+  userAgent: string,
+): Promise<OAuthTokens> {
+  const returnedState = parseCallbackState(rawCode);
+  if (returnedState !== null && returnedState !== pending.state) {
+    throw new Error("OAuth state mismatch: the pasted code belongs to another login attempt");
+  }
+  log.info("exchanging authorization code for tokens");
+  const tokens = await postTokenRequest(
+    {
+      grant_type: "authorization_code",
+      code: parseCallbackCode(rawCode),
+      code_verifier: pending.verifier,
+      redirect_uri: redirectUri,
+      state: pending.state,
+    },
+    userAgent,
+    "Token exchange failed",
+  );
+  log.info("token exchange succeeded");
+  return tokens;
+}
+
+class TokenRequestError extends Error {
+  constructor(
+    message: string,
+    readonly body: string,
+  ) {
+    super(message);
+  }
+}
+
+function isInvalidScope(failure: Error): boolean {
+  return failure instanceof TokenRequestError && failure.body.includes("invalid_scope");
+}
+
+function refreshParams(refreshToken: string, scope: string | null): TokenRequestParams {
+  const base = { grant_type: "refresh_token", refresh_token: refreshToken };
+  return scope ? { ...base, scope } : base;
+}
+
+async function requestRefresh(refreshToken: string, scope: string | null): Promise<OAuthTokens> {
+  return postTokenRequest(
+    refreshParams(refreshToken, scope),
+    getIntro().userAgent,
+    "Token refresh failed",
+  );
+}
+
+async function refreshTokens(refreshToken: string): Promise<OAuthTokens> {
+  log.info("refreshing oauth token");
+  try {
+    const tokens = await requestRefresh(refreshToken, refreshScopes).catch((failure: Error) => {
+      if (!isInvalidScope(failure)) throw failure;
+      log.warn("refresh rejected the claude code scopes, retrying with the granted scopes");
+      return requestRefresh(refreshToken, null);
+    });
+    log.info("token refresh succeeded");
+    return tokens;
+  } catch (failure) {
+    log.error("token refresh failed", { error: String(failure) });
+    throw failure;
+  }
+}
+
+export function refreshTokensOnce(refreshToken: string): Promise<OAuthTokens> {
+  const inFlight = refreshesInFlight.get(refreshToken);
+  if (inFlight) return inFlight;
+
+  const refresh = refreshTokens(refreshToken).finally(() => refreshesInFlight.delete(refreshToken));
+  refreshesInFlight.set(refreshToken, refresh);
+  return refresh;
+}
+
+export function createCodeExchange(
+  authorization: PendingAuthorization,
+): (code: string) => Promise<OAuthTokens> {
+  let pending: Promise<OAuthTokens> | null = null;
+  return (code) => {
+    pending ??= exchangeCodeForTokens(code, authorization, getIntro().userAgent).catch(
+      (failure) => {
+        pending = null;
+        log.error("token exchange failed", { error: String(failure) });
+        throw failure;
+      },
+    );
+    return pending;
+  };
+}
