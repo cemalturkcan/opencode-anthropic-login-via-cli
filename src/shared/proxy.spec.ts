@@ -154,6 +154,28 @@ describe("rewriteOrigin", () => {
   });
 });
 
+describe("rewriteOrigin api prefix", () => {
+  afterEach(() => {
+    delete process.env.ANTHROPIC_BASE_URL;
+  });
+
+  it("restores /v1 when the sdk built the url from ANTHROPIC_BASE_URL without it", () => {
+    process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:18766";
+
+    const result = rewriteOrigin("http://127.0.0.1:18766/messages") as URL;
+
+    expect(result.pathname).toBe("/v1/messages");
+  });
+
+  it("keeps oauth api paths as they are", () => {
+    process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:18766";
+
+    const result = rewriteOrigin("https://api.anthropic.com/api/oauth/profile") as URL;
+
+    expect(result.href).toBe("http://127.0.0.1:18766/api/oauth/profile");
+  });
+});
+
 describe("addBetaParam", () => {
   it("adds beta=true to messages requests", () => {
     const result = addBetaParam("https://api.anthropic.com/v1/messages") as URL;

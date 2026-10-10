@@ -192,7 +192,7 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, store: Auth
     const { body, modelId } = await prepareBody(input, init, headers, context);
     applyOAuthHeaders(headers, modelId, { access: auth.access, sessionId, cli: intro });
 
-    const target = rewriteOrigin(addBetaParam(input));
+    const target = addBetaParam(rewriteOrigin(input));
     const requestInit: BunFetchRequestInit = { ...init, body, headers };
     if (isInsecure()) requestInit.tls = { rejectUnauthorized: false };
     log.debug("outgoing request", { model: modelId });

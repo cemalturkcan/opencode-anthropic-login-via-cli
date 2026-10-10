@@ -163,6 +163,22 @@ describe("createCustomFetch", () => {
     expect(sent?.init?.tls).toEqual({ rejectUnauthorized: false });
   });
 
+  it("restores /v1 and beta=true when the sdk used ANTHROPIC_BASE_URL as its base url", async () => {
+    process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:18766";
+    let sent: SentRequest | undefined;
+    replaceFetch(async (input, init) => {
+      sent = await record(input, init);
+      return new Response("ok");
+    });
+
+    await createCustomFetch(async () => freshAuth(), recordingStore())(
+      "http://127.0.0.1:18766/messages",
+      jsonPost(),
+    );
+
+    expect(sent?.url).toBe("http://127.0.0.1:18766/v1/messages?beta=true");
+  });
+
   it("refreshes an expiring token with the latest stored refresh token", async () => {
     const store = recordingStore();
     const requests: SentRequest[] = [];

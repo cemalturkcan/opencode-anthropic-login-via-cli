@@ -53,7 +53,7 @@ export async function prepareOAuthRequest(
     init.body = body;
     headers.delete("content-length");
   }
-  return { request: rewriteOrigin(addBetaParam(new Request(request, init))), body };
+  return { request: addBetaParam(rewriteOrigin(new Request(request, init))), body };
 }
 
 async function replayWith(sent: Request, body: string, access: string): Promise<Request> {

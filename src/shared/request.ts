@@ -1,6 +1,8 @@
 import type { CliIdentity } from "./constants.ts";
 import { getBetaFlags, getBetasForModel } from "./modelConfig.ts";
 
+const openCodeOnlyHeaders = ["x-opencode-session-id", "x-session-id", "x-session-affinity"];
+
 const stainlessOs = new Map([
   ["linux", "Linux"],
   ["darwin", "MacOS"],
@@ -54,4 +56,5 @@ export function applyOAuthHeaders(
   headers.set("x-app", "cli");
   headers.set("x-claude-code-session-id", identity.sessionId);
   headers.delete("x-api-key");
+  for (const name of openCodeOnlyHeaders) headers.delete(name);
 }

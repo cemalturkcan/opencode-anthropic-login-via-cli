@@ -67,6 +67,20 @@ describe("applyOAuthHeaders", () => {
     expect(headers.has("x-api-key")).toBe(false);
   });
 
+  it("drops the opencode session headers claude code never sends", () => {
+    const headers = new Headers({
+      "x-opencode-session-id": "ses_1",
+      "x-session-id": "ses_1",
+      "x-session-affinity": "ses_1",
+    });
+
+    applyOAuthHeaders(headers, null, identity);
+
+    expect(headers.has("x-opencode-session-id")).toBe(false);
+    expect(headers.has("x-session-id")).toBe(false);
+    expect(headers.has("x-session-affinity")).toBe(false);
+  });
+
   it("keeps an anthropic-version chosen by the caller", () => {
     const headers = new Headers({ "anthropic-version": "2024-01-01" });
 

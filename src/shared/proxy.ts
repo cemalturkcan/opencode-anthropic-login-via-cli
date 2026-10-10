@@ -72,6 +72,9 @@ export function rewriteOrigin(input: RequestInfo | URL): RequestInfo | URL {
   const rewritten = new URL(url);
   rewritten.protocol = baseUrl.protocol;
   rewritten.host = baseUrl.host;
+  if (!rewritten.pathname.startsWith("/v1/") && !rewritten.pathname.startsWith("/api/")) {
+    rewritten.pathname = `/v1${rewritten.pathname}`;
+  }
   if (rewritten.href === url.href) return input;
 
   log.debug("rewrote request origin", { from: url.host, to: baseUrl.host });

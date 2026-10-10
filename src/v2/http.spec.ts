@@ -111,6 +111,27 @@ describe("V2 http.request hook", () => {
     expect(new URL(request.url).host).toBe("proxy.example.com");
   });
 
+  it("restores /v1 and beta=true when the host used ANTHROPIC_BASE_URL as its base url", async () => {
+    process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:18767";
+    const v2 = await setup();
+
+    const { request } = await v2.fire<RequestEvent>("http.request", {
+      kind: "primary",
+      request: messagesRequest(),
+    });
+    const fromBaseUrl = await v2.fire<RequestEvent>("http.request", {
+      kind: "primary",
+      request: new Request("http://127.0.0.1:18767/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-5-5" }),
+      }),
+    });
+
+    expect(request.url).toBe("http://127.0.0.1:18767/v1/messages?beta=true");
+    expect(fromBaseUrl.request.url).toBe("http://127.0.0.1:18767/v1/messages?beta=true");
+  });
+
   it("leaves api-key requests unchanged", async () => {
     const v2 = await setup({ type: "key", key: "fixture-api-key" } as never);
     const original = messagesRequest();
