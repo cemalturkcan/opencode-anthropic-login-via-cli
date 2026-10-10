@@ -8,7 +8,7 @@ import {
   writeCcsInstance,
   writeCliCredentials,
 } from "../testing/fixtures.ts";
-import { createCustomFetch, isTerminalRateLimit, type AuthState, type AuthStore } from "./fetch.ts";
+import { createCustomFetch, type AuthState, type AuthStore } from "./fetch.ts";
 
 type SentRequest = { url: string; headers: Headers; body: string; init?: BunFetchRequestInit };
 
@@ -64,25 +64,6 @@ function jsonPost(body = messagesBody()): RequestInit {
   return { method: "POST", headers: { "content-type": "application/json" }, body };
 }
 
-describe("isTerminalRateLimit", () => {
-  it.each([
-    "Extra usage is required for long context requests",
-    '{"error":{"type":"extra_usage"}}',
-    '{"error":{"type":"usage_limit_exceeded"}}',
-    '{"error":{"type":"billing_error"}}',
-  ])("treats a 429 with %s as terminal", (body) => {
-    expect(isTerminalRateLimit(429, body)).toBe(true);
-  });
-
-  it("retries an ordinary rate limit", () => {
-    expect(isTerminalRateLimit(429, '{"error":{"type":"rate_limit_error"}}')).toBe(false);
-  });
-
-  it("only classifies 429 responses", () => {
-    expect(isTerminalRateLimit(401, '{"error":{"type":"billing_error"}}')).toBe(false);
-  });
-});
-
 describe("createCustomFetch", () => {
   it("passes api-key requests through untouched", async () => {
     let sent: SentRequest | undefined;
@@ -122,6 +103,26 @@ describe("createCustomFetch", () => {
     expect(sent?.headers.get("anthropic-beta")).toContain("oauth-2025-04-20");
     expect(sent?.headers.get("anthropic-beta")).toContain("custom");
     expect(JSON.parse(sent?.body ?? "{}").tools[0].name).toBe("mcp_Bash");
+  });
+
+  it("tags requests with one claude code session and the account metadata", async () => {
+    const sent: SentRequest[] = [];
+    replaceFetch(async (input, init) => {
+      sent.push(await record(input, init));
+      return new Response("ok");
+    });
+    const customFetch = createCustomFetch(async () => freshAuth(), recordingStore());
+
+    await customFetch("https://api.anthropic.com/v1/messages", jsonPost());
+    await customFetch("https://api.anthropic.com/v1/messages", jsonPost());
+    const sessionId = sent[0].headers.get("x-claude-code-session-id");
+
+    expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(sent[1].headers.get("x-claude-code-session-id")).toBe(sessionId);
+    expect(JSON.parse(JSON.parse(sent[0].body).metadata.user_id)).toMatchObject({
+      account_uuid: "current-access-uuid",
+      session_id: sessionId,
+    });
   });
 
   it("transforms the body of a Request input", async () => {
@@ -182,7 +183,7 @@ describe("createCustomFetch", () => {
 
     await customFetch("https://api.anthropic.com/v1/messages", jsonPost());
 
-    expect(new URLSearchParams(requests[0].body).get("refresh_token")).toBe("latest-refresh");
+    expect(JSON.parse(requests[0].body).refresh_token).toBe("latest-refresh");
     expect(requests[1].headers.get("authorization")).toBe("Bearer rotated-access");
     expect(store.saved).toEqual([
       {

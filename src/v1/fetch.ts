@@ -5,12 +5,20 @@ import {
   readFreshCliCredentials,
   refreshViaClaudeCli,
 } from "../shared/credentials.ts";
+import { randomUUID } from "node:crypto";
+import { accountProfile, deviceId } from "../shared/identity.ts";
 import { awaitIntro } from "../shared/introspection.ts";
 import { log } from "../shared/logger.ts";
 import { refreshTokensOnce } from "../shared/oauthClient.ts";
 import { addBetaParam, isInsecure, rewriteOrigin } from "../shared/proxy.ts";
+import { isTerminalRateLimit } from "../shared/rateLimit.ts";
+import { reportVersionGate } from "../shared/versionGate.ts";
 import { applyOAuthHeaders, hasJsonContentType } from "../shared/request.ts";
-import { transformRequestBody, withUnprefixedToolNames } from "../shared/transforms.ts";
+import {
+  transformRequestBody,
+  withUnprefixedToolNames,
+  type BodyContext,
+} from "../shared/transforms.ts";
 
 export type AuthState = {
   type: string;
@@ -31,16 +39,6 @@ export type AuthStore = {
 type PreparedBody = { body: BodyInit | null | undefined; modelId: string | null };
 
 const recoverableStatuses = new Set([401, 429, 529]);
-const terminalRateLimitMarkers = [
-  "Extra usage is required for long context requests",
-  "extra_usage",
-  "usage_limit_exceeded",
-  "billing_error",
-];
-
-export function isTerminalRateLimit(status: number, body: string): boolean {
-  return status === 429 && terminalRateLimitMarkers.some((marker) => body.includes(marker));
-}
 
 function mergeHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
   const headers = new Headers(input instanceof Request ? input.headers : undefined);
@@ -56,15 +54,16 @@ async function prepareBody(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   headers: Headers,
+  context: BodyContext,
 ): Promise<PreparedBody> {
-  if (isTextBody(init?.body)) return transformRequestBody(init.body);
+  if (isTextBody(init?.body)) return transformRequestBody(init.body, context);
   if (init?.body !== undefined || !(input instanceof Request) || !input.body) {
     return { body: init?.body, modelId: null };
   }
 
   if (!hasJsonContentType(headers))
     return { body: await input.clone().arrayBuffer(), modelId: null };
-  return transformRequestBody(await input.clone().text());
+  return transformRequestBody(await input.clone().text(), context);
 }
 
 async function persistTokens(
@@ -164,7 +163,13 @@ function unauthenticated(): Response {
   });
 }
 
+async function bodyContext(sessionId: string, access: string): Promise<BodyContext> {
+  const [device, profile] = await Promise.all([deviceId(), accountProfile(access)]);
+  return { sessionId, deviceId: device, accountUuid: profile?.uuid ?? null };
+}
+
 export function createCustomFetch(getAuth: () => Promise<AuthState>, store: AuthStore) {
+  const sessionId = randomUUID();
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const intro = await awaitIntro();
     const auth = await getAuth();
@@ -179,15 +184,16 @@ export function createCustomFetch(getAuth: () => Promise<AuthState>, store: Auth
     }
 
     const headers = mergeHeaders(input, init);
-    const { body, modelId } = await prepareBody(input, init, headers);
-    applyOAuthHeaders(headers, auth.access, modelId, intro);
+    const context = await bodyContext(sessionId, auth.access);
+    const { body, modelId } = await prepareBody(input, init, headers, context);
+    applyOAuthHeaders(headers, modelId, { access: auth.access, sessionId, cli: intro });
 
     const target = rewriteOrigin(addBetaParam(input));
     const requestInit: BunFetchRequestInit = { ...init, body, headers };
     if (isInsecure()) requestInit.tls = { rejectUnauthorized: false };
     log.debug("outgoing request", { model: modelId });
 
-    const response = await fetch(target, requestInit);
+    const response = await reportVersionGate(await fetch(target, requestInit));
     const final = recoverableStatuses.has(response.status)
       ? await retryWithRecoveredCredentials(response, auth, store, target, requestInit)
       : response;

@@ -1,4 +1,4 @@
-import { getIntro, getLatestCliVersion } from "./introspection.ts";
+import { getInstalledCliVersion, getLatestCliVersion } from "./introspection.ts";
 
 export const claudeSiteUrl = "https://claude.ai";
 export const claudeCodeDocsUrl = "https://docs.anthropic.com/en/docs/build-with-claude/claude-code";
@@ -21,7 +21,7 @@ export function ccsInstructions(instanceName: string): string {
 export function cliDetectionInstructions(): string {
   const latest = getLatestCliVersion();
   const outdated = latest
-    ? `\n\nClaude CLI is outdated (installed ${getIntro().version}, latest ${latest}). Run: npm install -g @anthropic-ai/claude-code`
+    ? `\n\nClaude CLI is outdated (installed ${getInstalledCliVersion()}, latest ${latest}). Run: npm install -g @anthropic-ai/claude-code`
     : "";
   return `Detecting Claude Code credentials...${outdated}`;
 }

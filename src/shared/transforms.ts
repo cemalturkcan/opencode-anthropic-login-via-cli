@@ -1,4 +1,4 @@
-import { buildBillingHeaderValue, type Message } from "./cch.ts";
+import { buildBillingHeaderValue, type Message } from "./billingHeader.ts";
 import { toolPrefix } from "./constants.ts";
 import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { log } from "./logger.ts";
@@ -20,6 +20,12 @@ const prefixedToolNamePattern = /"name"\s*:\s*"mcp_([^"]+)"/g;
 type TransformedBody = {
   body: string;
   modelId: string | null;
+};
+
+export type BodyContext = {
+  sessionId: string;
+  deviceId: string;
+  accountUuid: string | null;
 };
 
 type SystemBlock = JsonObject & { type: "text"; text: string };
@@ -100,6 +106,46 @@ function prefixToolNames(body: JsonObject): void {
   }
 }
 
+function promptCacheTtl(): string | null {
+  return process.env.ANTHROPIC_PROMPT_CACHE_TTL === "5m" ? null : "1h";
+}
+
+function withCacheTtl(block: JsonValue, ttl: string): JsonValue {
+  if (!isJsonObject(block) || !isJsonObject(block.cache_control)) return block;
+  const { cache_control: cacheControl } = block;
+  if (cacheControl.type !== "ephemeral" || cacheControl.ttl !== undefined) return block;
+  return { ...block, cache_control: { ...cacheControl, ttl } };
+}
+
+function withContentCacheTtl(message: JsonValue, ttl: string): JsonValue {
+  if (!isJsonObject(message) || !Array.isArray(message.content)) return message;
+  return { ...message, content: message.content.map((block) => withCacheTtl(block, ttl)) };
+}
+
+function applyCacheTtl(body: JsonObject): void {
+  const ttl = promptCacheTtl();
+  if (!ttl) return;
+  if (Array.isArray(body.system))
+    body.system = body.system.map((block) => withCacheTtl(block, ttl));
+  if (Array.isArray(body.tools)) body.tools = body.tools.map((tool) => withCacheTtl(tool, ttl));
+  if (Array.isArray(body.messages)) {
+    body.messages = body.messages.map((message) => withContentCacheTtl(message, ttl));
+  }
+}
+
+function applyMetadata(body: JsonObject, context: BodyContext | undefined): void {
+  if (!context?.accountUuid) return;
+  const metadata = isJsonObject(body.metadata) ? body.metadata : {};
+  if (metadata.user_id !== undefined) return;
+
+  const userId = JSON.stringify({
+    device_id: context.deviceId,
+    account_uuid: context.accountUuid,
+    session_id: context.sessionId,
+  });
+  body.metadata = { ...metadata, user_id: userId };
+}
+
 function toMessage(value: JsonObject): Message {
   const { role, content } = value;
   if (isJsonString(content)) return { role: isJsonString(role) ? role : undefined, content };
@@ -119,7 +165,7 @@ function conversationWithUser(body: JsonObject): Message[] | null {
   return messages.some((message) => message.role === "user") ? messages : null;
 }
 
-export function transformRequestBody(rawBody: string): TransformedBody {
+export function transformRequestBody(rawBody: string, context?: BodyContext): TransformedBody {
   const body = parseJson(rawBody);
   if (!isJsonObject(body)) {
     log.warn("failed to parse request body for transformation");
@@ -132,6 +178,8 @@ export function transformRequestBody(rawBody: string): TransformedBody {
     ? [{ type: "text", text: buildBillingHeaderValue(messages) }, ...system]
     : system;
   prefixToolNames(body);
+  applyCacheTtl(body);
+  applyMetadata(body, context);
 
   return { body: JSON.stringify(body), modelId: isJsonString(body.model) ? body.model : null };
 }

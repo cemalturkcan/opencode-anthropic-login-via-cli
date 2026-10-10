@@ -76,7 +76,7 @@ export function readCCSCredentials(instance: CCSInstance): Promise<OAuthTokens |
 export async function refreshViaClaudeCli(): Promise<OAuthTokens | null> {
   log.info("triggering claude cli refresh");
   try {
-    await execFileAsync(claudeCommand, ["--print", "--model", "claude-haiku-4", "ping"], {
+    await execFileAsync(claudeCommand, ["--print", "--model", "haiku", "ping"], {
       timeout: 30_000,
       env: { ...process.env, TERM: "dumb" },
     });

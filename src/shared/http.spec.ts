@@ -1,16 +1,19 @@
 import { describe, expect, it } from "bun:test";
 import { replaceFetch, restoreFetchAfterEach } from "../testing/fetch.ts";
-import { fetchWithRetry, parseRetryAfterMs } from "./http.ts";
+import { backoffDelayMs, fetchWithRetry } from "./http.ts";
 
 restoreFetchAfterEach();
 
-describe("parseRetryAfterMs", () => {
-  it("converts seconds to milliseconds", () => {
-    expect(parseRetryAfterMs("2")).toBe(2000);
+describe("backoffDelayMs", () => {
+  it("honors retry-after up to thirty seconds", () => {
+    expect(backoffDelayMs(1, "2")).toBe(2000);
+    expect(backoffDelayMs(1, "600")).toBe(30_000);
   });
 
-  it.each([null, "", "soon"])("returns null for %p", (value) => {
-    expect(parseRetryAfterMs(value)).toBeNull();
+  it("uses full jitter exponential backoff without retry-after", () => {
+    expect(backoffDelayMs(1, null, () => 0.999)).toBe(999);
+    expect(backoffDelayMs(3, null, () => 0.5)).toBe(2000);
+    expect(backoffDelayMs(20, null, () => 0.999)).toBe(29_970);
   });
 });
 
@@ -65,13 +68,13 @@ describe("fetchWithRetry", () => {
     expect(fetchCalls.length).toBe(1);
   });
 
-  it("does not retry on 500", async () => {
-    mockFetch([{ status: 500 }]);
+  it("retries a transient 503", async () => {
+    mockFetch([{ status: 503 }, { status: 200 }]);
 
     const res = await fetchWithRetry("https://api.test/v1/messages", {}, 3);
 
-    expect(res.status).toBe(500);
-    expect(fetchCalls.length).toBe(1);
+    expect(res.status).toBe(200);
+    expect(fetchCalls.length).toBe(2);
   });
 
   it("respects retry-after header in seconds", async () => {

@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { replaceFetch, restoreFetchAfterEach } from "../testing/fetch.ts";
 import { createV2Context, oauthCredential } from "../testing/v2Context.ts";
+import { createAccountRouter, type AccountIntegration } from "./accounts.ts";
 import { setupV2Http } from "./http.ts";
 import type { SubscriptionPricing } from "./pricing.ts";
 
-type RequestEvent = { kind: string; request: Request };
-type ResponseEvent = { kind: string; request: Request; response: Response };
+type RequestEvent = { sessionID?: string; kind: string; request: Request };
+type ResponseEvent = { sessionID?: string; kind: string; request: Request; response: Response };
 
+restoreFetchAfterEach();
 afterEach(() => {
   delete process.env.ANTHROPIC_BASE_URL;
 });
@@ -16,9 +19,10 @@ function recordingPricing(): SubscriptionPricing & { states: boolean[] } {
 }
 
 async function setup(credential = oauthCredential(), pricing = recordingPricing()) {
+  replaceFetch(() => new Response("unexpected upstream call", { status: 500 }));
   const v2 = createV2Context(credential);
-  const ctx = v2.context as { integration: never; session: never };
-  await setupV2Http(ctx.integration, ctx.session, pricing);
+  const ctx = v2.context as { integration: AccountIntegration; session: never };
+  await setupV2Http(createAccountRouter(ctx.integration), ctx.session, pricing);
   return v2;
 }
 
@@ -58,6 +62,29 @@ describe("V2 http.request hook", () => {
       expect(request.signal.aborted).toBe(true);
     },
   );
+
+  it("tags requests with a stable claude code session and the account metadata", async () => {
+    const v2 = await setup();
+
+    const first = await v2.fire<RequestEvent>("http.request", {
+      sessionID: "opencode-session",
+      kind: "primary",
+      request: messagesRequest(),
+    });
+    const second = await v2.fire<RequestEvent>("http.request", {
+      sessionID: "opencode-session",
+      kind: "primary",
+      request: messagesRequest(),
+    });
+    const sessionId = first.request.headers.get("x-claude-code-session-id");
+
+    expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(second.request.headers.get("x-claude-code-session-id")).toBe(sessionId);
+    expect(JSON.parse(JSON.parse(await first.request.text()).metadata.user_id)).toMatchObject({
+      account_uuid: "fixture-access-uuid",
+      session_id: sessionId,
+    });
+  });
 
   it("drops a stale content-length after rewriting the body", async () => {
     const v2 = await setup();
@@ -149,6 +176,65 @@ describe("V2 http.response hook", () => {
     expect(response).toBe(original);
   });
 
+  it("replays a rate-limited request with another account", async () => {
+    const v2 = await setup();
+    v2.addAccount("work", oauthCredential("ccs-work", "work"));
+    const authorizations: (string | null)[] = [];
+    replaceFetch((input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      authorizations.push(request.headers.get("authorization"));
+      return Response.json({ content: [{ type: "tool_use", name: "mcp_Bash" }] });
+    });
+    const { request } = await v2.fire<RequestEvent>("http.request", {
+      sessionID: "s",
+      kind: "primary",
+      request: messagesRequest(),
+    });
+
+    const { response } = await v2.fire<ResponseEvent>("http.response", {
+      sessionID: "s",
+      kind: "primary",
+      request,
+      response: new Response('{"error":{"type":"rate_limit_error"}}', { status: 429 }),
+    });
+
+    expect(authorizations).toEqual(["Bearer work"]);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('"name": "bash"');
+  });
+
+  it("keeps a terminal rate limit without switching accounts", async () => {
+    const v2 = await setup();
+    v2.addAccount("work", oauthCredential("ccs-work", "work"));
+    const { request } = await v2.fire<RequestEvent>("http.request", {
+      sessionID: "s",
+      kind: "primary",
+      request: messagesRequest(),
+    });
+
+    const { response } = await v2.fire<ResponseEvent>("http.response", {
+      sessionID: "s",
+      kind: "primary",
+      request,
+      response: new Response('{"error":{"type":"billing_error"}}', { status: 429 }),
+    });
+
+    expect(response.status).toBe(429);
+  });
+
+  it("restores tool names when the host hands back a different request object", async () => {
+    const v2 = await setup();
+
+    const { response } = await v2.fire<ResponseEvent>("http.response", {
+      sessionID: "s",
+      kind: "primary",
+      request: messagesRequest(),
+      response: Response.json({ content: [{ type: "tool_use", name: "mcp_Bash" }] }),
+    });
+
+    expect(await response.text()).toContain('"name": "bash"');
+  });
+
   it("passes a real 401 from the server through unchanged", async () => {
     let received: { authorization: string | null; body: string } | undefined;
     const server = Bun.serve({
@@ -175,7 +261,7 @@ describe("V2 http.response hook", () => {
       const { response } = await v2.fire<ResponseEvent>("http.response", {
         kind: "primary",
         request,
-        response: await fetch(request),
+        response: await Bun.fetch(request),
       });
 
       expect(received?.authorization).toBe("Bearer fixture-access");

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import type { Credential } from "@opencode/plugin";
 import type { IntegrationOAuthMethodRegistration } from "@opencode/plugin/promise/integration";
-import { replaceFetch, restoreFetchAfterEach, tokenResponse } from "../testing/fetch.ts";
+import { jsonField, replaceFetch, restoreFetchAfterEach, tokenResponse } from "../testing/fetch.ts";
 import {
   expiredTokens,
   installClaudeStub,
@@ -72,6 +72,28 @@ describe("V2 method registration", () => {
     });
   });
 
+  it("stores the account email and uuid so V2 can label the connection", async () => {
+    replaceFetch(rejectedRefresh);
+    await installClaudeStub();
+    await writeCliCredentials(validTokens("cli"));
+    const v2 = await setup();
+    const method = v2.method("claude-cli");
+
+    const credential = await autoCredential(method);
+
+    expect(credential.metadata).toEqual({
+      email: "cli-access@example.com",
+      accountUuid: "cli-access-uuid",
+    });
+    expect(method.label?.(credential)).toBe("cli-access@example.com");
+  });
+
+  it("leaves the label to OpenCode when no email is known", async () => {
+    const v2 = await setup();
+
+    expect(v2.method("claude-cli").label?.(oauthCredential())).toBeUndefined();
+  });
+
   it("rejects the cli method when the cli is missing", async () => {
     const v2 = await setup();
 
@@ -104,7 +126,7 @@ describe("V2 refresh", () => {
   it("refreshes with the credential's own refresh token and keeps its metadata", async () => {
     const refreshTokens: (string | null)[] = [];
     replaceFetch((_input, init) => {
-      refreshTokens.push(new URLSearchParams(String(init?.body)).get("refresh_token"));
+      refreshTokens.push(jsonField(init?.body, "refresh_token"));
       return tokenResponse("refreshed");
     });
     const v2 = await setup();

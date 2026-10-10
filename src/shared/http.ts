@@ -1,11 +1,18 @@
 import { log } from "./logger.ts";
+import { parseRetryAfterMs } from "./rateLimit.ts";
 
-const retryableStatuses = new Set([429, 529]);
+const retryableStatuses = new Set([429, 500, 502, 503, 504, 529]);
+const backoffBaseMs = 500;
+const maxDelayMs = 30_000;
 
-export function parseRetryAfterMs(retryAfter: string | null): number | null {
-  if (!retryAfter) return null;
-  const seconds = Number.parseInt(retryAfter, 10);
-  return Number.isNaN(seconds) ? null : seconds * 1000;
+export function backoffDelayMs(
+  attempt: number,
+  retryAfter: string | null,
+  random = Math.random,
+): number {
+  const requested = parseRetryAfterMs(retryAfter);
+  if (requested !== null) return Math.min(requested, maxDelayMs);
+  return Math.floor(random() * Math.min(maxDelayMs, backoffBaseMs * 2 ** attempt));
 }
 
 async function attemptFetch(
@@ -18,13 +25,8 @@ async function attemptFetch(
   if (!retryableStatuses.has(response.status) || attempt >= maxAttempts) return response;
 
   const retryAfter = response.headers.get("retry-after");
-  const delayMs = parseRetryAfterMs(retryAfter) ?? attempt * 2000;
-  log.debug("rate limited, retrying", {
-    status: response.status,
-    attempt,
-    delayMs,
-    retryAfter: retryAfter ?? "none",
-  });
+  const delayMs = backoffDelayMs(attempt, retryAfter);
+  log.debug("token endpoint busy, retrying", { status: response.status, attempt, delayMs });
   await Bun.sleep(delayMs);
   return attemptFetch(url, init, attempt + 1, maxAttempts);
 }

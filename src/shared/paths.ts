@@ -11,6 +11,10 @@ export function claudeCredentialsPath(): string {
   return join(homeDirectory(), ".claude", ".credentials.json");
 }
 
+export function claudeConfigPath(): string {
+  return join(homeDirectory(), ".claude.json");
+}
+
 export function ccsInstancesDirectory(): string {
   return join(homeDirectory(), ".ccs", "instances");
 }

@@ -4,9 +4,9 @@
 
 ## Features
 
-### Binary Introspection
+### Claude Code Version
 
-Reads the Claude CLI binary to extract current beta headers, OAuth scopes, and version info. Stays in sync with Anthropic's API automatically instead of relying on hardcoded values.
+Reads the installed Claude CLI version and reports it, or 2.1.296 when the CLI is missing or older. Login instructions warn when the installed CLI is outdated.
 
 ### Cross-Platform Support
 
@@ -33,7 +33,15 @@ Handles expired tokens automatically. V1 and V2 fall back to valid Claude CLI cr
 
 ### Request Patching
 
-Patches requests so OpenCode talks to Anthropic's API the same way Claude Code does.
+Patches requests so OpenCode talks to Anthropic's API the same way Claude Code 2.1.296 does: the same betas, headers, user agent, billing block, session id and account metadata. The reported CLI version is the installed one or 2.1.296, whichever is newer.
+
+### Prompt Caching
+
+Upgrades OpenCode's cache breakpoints to the one hour TTL that Claude Code uses on subscriptions, so a pause or a long tool run does not drop the cache after five minutes.
+
+### Multiple Accounts (OpenCode V2)
+
+Every login is a separate V2 account labeled with its email. When an account hits a rate limit, the request is replayed once with another logged-in account and the session stays on it until the first account's limit resets. Billing and long-context limits never switch accounts.
 
 ## Compatibility
 
@@ -83,6 +91,7 @@ On OpenCode V2 the plugin also registers **Claude Pro/Max (migrated from OpenCod
 | `ANTHROPIC_USER_AGENT`        | Override the user agent                                  |
 | `ANTHROPIC_BASE_URL`          | Send requests to another origin, such as a local proxy   |
 | `ANTHROPIC_INSECURE`          | Skip TLS verification for `ANTHROPIC_BASE_URL` (V1 only) |
+| `ANTHROPIC_PROMPT_CACHE_TTL`  | `5m` keeps OpenCode's 5 minute cache; default is `1h`    |
 
 The debug log is written to `~/.local/share/opencode/claude-auth-debug.log`.
 

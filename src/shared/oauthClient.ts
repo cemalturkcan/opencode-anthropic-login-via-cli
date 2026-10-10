@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   authorizeUrl,
   oauthClientId,
+  oauthScopes,
   redirectUri,
   tokenUrl,
   type OAuthTokens,
@@ -19,7 +20,7 @@ function base64url(buffer: Buffer): string {
   return buffer.toString("base64url");
 }
 
-export function createAuthorizationRequest(scopes: string): AuthorizationRequest {
+export function createAuthorizationRequest(): AuthorizationRequest {
   const verifier = base64url(randomBytes(32));
   const challenge = base64url(createHash("sha256").update(verifier).digest());
   const params = new URLSearchParams({
@@ -27,7 +28,7 @@ export function createAuthorizationRequest(scopes: string): AuthorizationRequest
     response_type: "code",
     client_id: oauthClientId,
     redirect_uri: redirectUri,
-    scope: scopes,
+    scope: oauthScopes,
     code_challenge: challenge,
     code_challenge_method: "S256",
     state: verifier,
@@ -71,6 +72,16 @@ function describeFailure(response: Response, body: string): string {
   return `${response.status}${statusText}${detail}`;
 }
 
+const defaultTokenLifetimeSeconds = 3600;
+
+function parseTokenResponse(body: JsonValue, previousRefresh: string | null): OAuthTokens | null {
+  if (!isJsonObject(body) || !isJsonString(body.access_token)) return null;
+  const refresh = isJsonString(body.refresh_token) ? body.refresh_token : previousRefresh;
+  if (!refresh) return null;
+  const lifetime = isJsonNumber(body.expires_in) ? body.expires_in : defaultTokenLifetimeSeconds;
+  return { access: body.access_token, refresh, expires: Date.now() + lifetime * 1000 };
+}
+
 async function postTokenRequest(
   params: Record<string, string>,
   userAgent: string,
@@ -78,11 +89,8 @@ async function postTokenRequest(
 ): Promise<OAuthTokens> {
   const response = await fetchWithRetry(tokenUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": userAgent,
-    },
-    body: new URLSearchParams({ ...params, client_id: oauthClientId }).toString(),
+    headers: { "Content-Type": "application/json", "User-Agent": userAgent },
+    body: JSON.stringify({ ...params, client_id: oauthClientId }),
   });
 
   if (!response.ok) {
@@ -90,20 +98,9 @@ async function postTokenRequest(
     throw new Error(`${failurePrefix}: ${describeFailure(response, body)}`);
   }
 
-  const body: JsonValue = await response.json();
-  if (
-    !isJsonObject(body) ||
-    !isJsonString(body.access_token) ||
-    !isJsonString(body.refresh_token) ||
-    !isJsonNumber(body.expires_in)
-  ) {
-    throw new Error(`${failurePrefix}: unexpected token response`);
-  }
-  return {
-    access: body.access_token,
-    refresh: body.refresh_token,
-    expires: Date.now() + body.expires_in * 1000,
-  };
+  const tokens = parseTokenResponse(await response.json(), params.refresh_token ?? null);
+  if (!tokens) throw new Error(`${failurePrefix}: unexpected token response`);
+  return tokens;
 }
 
 export async function exchangeCodeForTokens(
@@ -131,7 +128,7 @@ async function refreshTokens(refreshToken: string): Promise<OAuthTokens> {
   log.info("refreshing oauth token");
   try {
     const tokens = await postTokenRequest(
-      { grant_type: "refresh_token", refresh_token: refreshToken },
+      { grant_type: "refresh_token", refresh_token: refreshToken, scope: oauthScopes },
       getIntro().userAgent,
       "Token refresh failed",
     );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { replaceFetch, restoreFetchAfterEach, tokenResponse } from "../testing/fetch.ts";
+import { jsonField, replaceFetch, restoreFetchAfterEach, tokenResponse } from "../testing/fetch.ts";
+import { oauthScopes } from "./constants.ts";
 import {
   createAuthorizationRequest,
   createCodeExchange,
@@ -80,11 +81,11 @@ describe("parseCallbackCode", () => {
 });
 
 describe("createAuthorizationRequest", () => {
-  it("builds a pkce authorization url with the verifier as state", () => {
-    const { url, verifier } = createAuthorizationRequest("user:inference");
+  it("builds a pkce authorization url with claude code scopes and the verifier as state", () => {
+    const { url, verifier } = createAuthorizationRequest();
     const params = new URL(url).searchParams;
 
-    expect(params.get("scope")).toBe("user:inference");
+    expect(params.get("scope")).toBe(oauthScopes);
     expect(params.get("code_challenge_method")).toBe("S256");
     expect(params.get("state")).toBe(verifier);
     expect(params.get("code_challenge")).not.toBe(verifier);
@@ -111,7 +112,7 @@ describe("refreshTokensOnce", () => {
 
   it("never hands one account's tokens to a concurrent refresh of another account", async () => {
     replaceFetch(async (_input, init) => {
-      const token = new URLSearchParams(String(init?.body)).get("refresh_token");
+      const token = jsonField(init?.body, "refresh_token");
       await Bun.sleep(5);
       return tokenResponse(String(token));
     });
@@ -133,6 +134,42 @@ describe("refreshTokensOnce", () => {
     );
   });
 
+  it("sends a json refresh request with the claude code scopes", async () => {
+    let sent: { contentType: string | null; body: string } | undefined;
+    replaceFetch((_input, init) => {
+      sent = {
+        contentType: new Headers(init?.headers).get("content-type"),
+        body: String(init?.body),
+      };
+      return tokenResponse("json");
+    });
+
+    await refreshTokensOnce("json-refresh");
+
+    expect(sent?.contentType).toBe("application/json");
+    expect(JSON.parse(sent?.body ?? "{}")).toEqual({
+      grant_type: "refresh_token",
+      refresh_token: "json-refresh",
+      client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+      scope: oauthScopes,
+    });
+  });
+
+  it("keeps the old refresh token when the response does not rotate it", async () => {
+    replaceFetch(() => Response.json({ access_token: "new-access", expires_in: 3600 }));
+
+    expect(await refreshTokensOnce("kept-refresh")).toMatchObject({
+      access: "new-access",
+      refresh: "kept-refresh",
+    });
+  });
+
+  it("rejects a token response without an access token", async () => {
+    replaceFetch(() => Response.json({ refresh_token: "r", expires_in: 3600 }));
+
+    await expect(refreshTokensOnce("broken")).rejects.toThrow("unexpected token response");
+  });
+
   it("allows a new refresh after the previous one settled", async () => {
     let calls = 0;
     replaceFetch(() => {
@@ -151,7 +188,7 @@ describe("createCodeExchange", () => {
   it("exchanges a pasted callback url once for duplicate submissions", async () => {
     const codes: string[] = [];
     replaceFetch(async (_input, init) => {
-      codes.push(String(new URLSearchParams(String(init?.body)).get("code")));
+      codes.push(String(jsonField(init?.body, "code")));
       await Bun.sleep(5);
       return tokenResponse("browser");
     });

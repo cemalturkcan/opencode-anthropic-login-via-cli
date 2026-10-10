@@ -19,14 +19,15 @@ import {
   resolveCliTokens,
   type CCSInstance,
 } from "../shared/credentials.ts";
-import { awaitIntro } from "../shared/introspection.ts";
+import { accountProfile } from "../shared/identity.ts";
+import { isJsonObject, isJsonString, parseJson } from "../shared/json.ts";
 import { log } from "../shared/logger.ts";
 import {
   createAuthorizationRequest,
   createCodeExchange,
   refreshTokensOnce,
 } from "../shared/oauthClient.ts";
-import { resolveOAuthCredential } from "./connection.ts";
+import { createAccountRouter } from "./accounts.ts";
 import { setupV2Http } from "./http.ts";
 import { setupSubscriptionPricing, type SubscriptionPricing } from "./pricing.ts";
 
@@ -46,6 +47,21 @@ function ccsMethodId(instance: CCSInstance): string {
 function toCredential(methodID: string, tokens: OAuthTokens): OAuthCredential {
   const brandedMethodID = methodID as OAuthCredential["methodID"];
   return { type: "oauth", methodID: brandedMethodID, ...tokens };
+}
+
+async function connectedCredential(
+  methodID: string,
+  tokens: OAuthTokens,
+): Promise<OAuthCredential> {
+  const credential = toCredential(methodID, tokens);
+  const profile = await accountProfile(tokens.access);
+  if (!profile) return credential;
+  return { ...credential, metadata: { email: profile.email, accountUuid: profile.uuid } };
+}
+
+export function credentialLabel(credential: OAuthCredential): string | undefined {
+  const metadata = parseJson(JSON.stringify(credential.metadata ?? {}));
+  return isJsonObject(metadata) && isJsonString(metadata.email) ? metadata.email : undefined;
 }
 
 function withTokens(credential: OAuthCredential, tokens: OAuthTokens): OAuthCredential {
@@ -85,7 +101,7 @@ function cliMethod(onConnected: () => Promise<void>): MethodRegistration {
   const connect = async () => {
     const tokens = await requireTokens(resolveCliTokens(), "Claude Code credentials unavailable");
     await onConnected();
-    return toCredential(cliMethodId, tokens);
+    return connectedCredential(cliMethodId, tokens);
   };
 
   return {
@@ -109,6 +125,7 @@ function cliMethod(onConnected: () => Promise<void>): MethodRegistration {
       };
     },
     refresh: refreshCredential,
+    label: credentialLabel,
   };
 }
 
@@ -120,7 +137,7 @@ function ccsMethod(instance: CCSInstance, onConnected: () => Promise<void>): Met
       `CCS credentials unavailable for ${instance.name}`,
     );
     await onConnected();
-    return toCredential(methodId, tokens);
+    return connectedCredential(methodId, tokens);
   };
 
   return {
@@ -135,6 +152,7 @@ function ccsMethod(instance: CCSInstance, onConnected: () => Promise<void>): Met
       };
     },
     refresh: refreshCredential,
+    label: credentialLabel,
   };
 }
 
@@ -147,7 +165,7 @@ function browserMethod(
     integrationID: "anthropic",
     method: { id: methodId, type: "oauth", label },
     async authorize() {
-      const { url, verifier } = createAuthorizationRequest((await awaitIntro()).scopes);
+      const { url, verifier } = createAuthorizationRequest();
       const exchange = createCodeExchange(verifier);
       return {
         url,
@@ -156,11 +174,12 @@ function browserMethod(
         async callback(code: string) {
           const tokens = await exchange(code);
           await onConnected();
-          return toCredential(methodId, tokens);
+          return connectedCredential(methodId, tokens);
         },
       };
     },
     refresh: refreshCredential,
+    label: credentialLabel,
   };
 }
 
@@ -182,12 +201,13 @@ export async function setupV2Auth(
   instances: CCSInstance[],
 ): Promise<void> {
   const pricing = await setupSubscriptionPricing(ctx.model);
-  await setupV2Http(ctx.integration, ctx.session, pricing);
+  const router = createAccountRouter(ctx.integration);
+  await setupV2Http(router, ctx.session, pricing);
 
   await ctx.integration.transform((editor) => {
     for (const method of oauthMethods(instances, pricing)) editor.method.update(method);
   });
   await ctx.integration.reload();
 
-  await pricing.sync((await resolveOAuthCredential(ctx.integration)) !== undefined);
+  await pricing.sync((await router.select("startup")) !== undefined);
 }

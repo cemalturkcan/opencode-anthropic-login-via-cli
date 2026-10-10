@@ -6,9 +6,9 @@ export const tokenUrl = "https://platform.claude.com/v1/oauth/token";
 export const redirectUri = "https://platform.claude.com/oauth/code/callback";
 export const toolPrefix = "mcp_";
 
-export const defaultCliVersion = "2.1.84";
-export const defaultScopes =
-  "org:create_api_key user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code";
+export const defaultCliVersion = "2.1.296";
+export const oauthScopes =
+  "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload user:plugins";
 export const refreshBufferMs = 5 * 60 * 1000;
 export const claudeCodeEntrypoint = "sdk-cli";
 
@@ -22,9 +22,7 @@ export type OAuthTokens = {
   expires: number;
 };
 
-export type IntrospectionResult = {
+export type CliIdentity = {
   version: string;
   userAgent: string;
-  betaHeaders: string[];
-  scopes: string;
 };

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import {
   createToolNameUnprefixStream,
   transformRequestBody,
@@ -326,5 +326,88 @@ describe("withUnprefixedToolNames", () => {
     const response = new Response(null, { status: 204 });
 
     expect(withUnprefixedToolNames(response)).toBe(response);
+  });
+});
+
+describe("prompt cache ttl", () => {
+  const cached = { type: "ephemeral" };
+
+  function cachedBody() {
+    return JSON.stringify({
+      model: "claude-sonnet-5-5",
+      system: [{ type: "text", text: "Rules.", cache_control: cached }],
+      tools: [{ name: "bash", cache_control: cached }],
+      messages: [
+        { role: "user", content: [{ type: "text", text: "Hi", cache_control: cached }] },
+        { role: "assistant", content: "plain" },
+      ],
+    });
+  }
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_PROMPT_CACHE_TTL;
+  });
+
+  it("upgrades every ephemeral breakpoint to the one hour ttl claude code uses", () => {
+    const parsed = JSON.parse(transformRequestBody(cachedBody()).body);
+
+    expect(parsed.system.at(-1).cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+    expect(parsed.tools[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+    expect(parsed.messages[0].content[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+  });
+
+  it("keeps an explicit ttl", () => {
+    const body = JSON.stringify({
+      model: "m",
+      system: [{ type: "text", text: "Rules.", cache_control: { type: "ephemeral", ttl: "5m" } }],
+      messages: [],
+    });
+
+    expect(JSON.parse(transformRequestBody(body).body).system.at(-1).cache_control.ttl).toBe("5m");
+  });
+
+  it("leaves breakpoints alone when ANTHROPIC_PROMPT_CACHE_TTL is 5m", () => {
+    process.env.ANTHROPIC_PROMPT_CACHE_TTL = "5m";
+
+    const parsed = JSON.parse(transformRequestBody(cachedBody()).body);
+
+    expect(parsed.tools[0].cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("does not add breakpoints", () => {
+    const parsed = JSON.parse(transformRequestBody(cachedBody()).body);
+    const marked = JSON.stringify(parsed).match(/cache_control/g) ?? [];
+
+    expect(marked).toHaveLength(3);
+  });
+});
+
+describe("request metadata", () => {
+  const context = { sessionId: "session", deviceId: "device", accountUuid: "account" };
+
+  it("adds the claude code user id when the account is known", () => {
+    const parsed = JSON.parse(
+      transformRequestBody(JSON.stringify({ model: "m", messages: [] }), context).body,
+    );
+
+    expect(JSON.parse(parsed.metadata.user_id)).toEqual({
+      device_id: "device",
+      account_uuid: "account",
+      session_id: "session",
+    });
+  });
+
+  it("keeps a user id chosen by the caller", () => {
+    const body = JSON.stringify({ model: "m", messages: [], metadata: { user_id: "caller" } });
+
+    expect(JSON.parse(transformRequestBody(body, context).body).metadata.user_id).toBe("caller");
+  });
+
+  it("omits metadata when the account is unknown", () => {
+    const body = JSON.stringify({ model: "m", messages: [] });
+
+    expect(
+      JSON.parse(transformRequestBody(body, { ...context, accountUuid: null }).body).metadata,
+    ).toBeUndefined();
   });
 });

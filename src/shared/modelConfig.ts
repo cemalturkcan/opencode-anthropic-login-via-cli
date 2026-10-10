@@ -1,32 +1,46 @@
-export const baseBetas = [
+import { claudeCodeEntrypoint } from "./constants.ts";
+
+export const claudeCodeBetas = [
   "claude-code-20250219",
-  "interleaved-thinking-2025-05-14",
   "oauth-2025-04-20",
+  "interleaved-thinking-2025-05-14",
+  "thinking-token-count-2026-05-13",
   "context-management-2025-06-27",
   "prompt-caching-scope-2026-01-05",
+  "mid-conversation-system-2026-04-07",
+  "per-turn-control-2026-07-01",
+  "mid-conversation-tool-changes-2026-07-01",
+  "inline-tools-2026-09-15",
+  "advisor-tool-2026-03-01",
+  "effort-2025-11-24",
+  "extended-cache-ttl-2025-04-11",
 ];
 
-export const longContextBetas = ["context-1m-2025-08-07"];
+export const longContextBeta = "context-1m-2025-08-07";
 
-type BetaOverride = { add?: string[]; remove?: string[] };
+const nativeLongContextModel = /(?:^|-)(?:opus-4-[78]|(?:haiku|sonnet|opus|fable|mythos)-5)(?:-|$)/;
 
-const modelBetaOverrides = new Map<string, BetaOverride>([["4-6", { add: ["effort-2025-11-24"] }]]);
-
-export function getCliVersion(fallback: string): string {
-  return process.env.ANTHROPIC_CLI_VERSION || fallback;
+export function getCliVersion(detected: string): string {
+  return process.env.ANTHROPIC_CLI_VERSION || detected;
 }
 
 export function getUserAgent(version: string): string {
-  return process.env.ANTHROPIC_USER_AGENT || `claude-cli/${version} (external, cli)`;
+  return (
+    process.env.ANTHROPIC_USER_AGENT || `claude-cli/${version} (external, ${claudeCodeEntrypoint})`
+  );
 }
 
-export function getBetaFlags(defaults: string[] = baseBetas): string[] {
+export function getBetaFlags(): string[] {
   const custom = process.env.ANTHROPIC_BETA_FLAGS;
-  if (!custom) return defaults;
+  if (!custom) return claudeCodeBetas;
   return custom
     .split(",")
     .map((beta) => beta.trim())
     .filter(Boolean);
+}
+
+export function isNativeLongContextModel(modelId: string): boolean {
+  return nativeLongContextModel.test(modelId);
 }
 
 function isLongContextEnabled(): boolean {
@@ -34,27 +48,8 @@ function isLongContextEnabled(): boolean {
   return setting === "1" || setting === "true";
 }
 
-function addMissing(betas: string[], additions: string[]): void {
-  for (const beta of additions) {
-    if (!betas.includes(beta)) betas.push(beta);
-  }
-}
-
-export function getBetasForModel(
-  modelId: string,
-  defaults: string[],
-  options?: { enableLongContext?: boolean },
-): string[] {
-  let betas = [...defaults];
-
-  if (options?.enableLongContext || isLongContextEnabled()) addMissing(betas, longContextBetas);
-
-  for (const [pattern, override] of modelBetaOverrides) {
-    if (!modelId.includes(pattern)) continue;
-    addMissing(betas, override.add ?? []);
-    const removals = override.remove ?? [];
-    betas = betas.filter((beta) => !removals.includes(beta));
-  }
-
-  return betas;
+export function getBetasForModel(modelId: string, defaults: string[]): string[] {
+  const wantsLongContext = isLongContextEnabled() && !isNativeLongContextModel(modelId);
+  if (!wantsLongContext || defaults.includes(longContextBeta)) return defaults;
+  return [...defaults, longContextBeta];
 }

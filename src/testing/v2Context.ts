@@ -19,6 +19,8 @@ type FakeIntegrationEditor = {
   method: { update(registration: FakeRegistration): void };
 };
 
+type FakeConnection = { type: "credential"; id: string; label: string; method: "oauth" | "key" };
+
 export function oauthCredential(
   methodID = "claude-cli",
   access = "fixture-access",
@@ -27,13 +29,28 @@ export function oauthCredential(
     type: "oauth",
     methodID: methodID as Credential.OAuth["methodID"],
     access,
-    refresh: "fixture-refresh",
+    refresh: `${access}-refresh`,
     expires: Date.now() + 60 * 60 * 1000,
   };
 }
 
+function toConnection(id: string, credential: Credential.Value): FakeConnection {
+  return {
+    type: "credential",
+    id,
+    label: id,
+    method: credential.type === "oauth" ? "oauth" : "key",
+  };
+}
+
 export function createV2Context(initial: Credential.Value | undefined) {
-  let credential = initial;
+  const accounts = new Map<string, Credential.Value>();
+  let activeId: string | undefined;
+  if (initial) {
+    accounts.set("active", initial);
+    activeId = "active";
+  }
+
   const hooks = new Map<string, Hook>();
   const methods = new Map<string, FakeRegistration>([["key", { method: { type: "key" } }]]);
   const model: FakeModel = {
@@ -75,12 +92,18 @@ export function createV2Context(initial: Credential.Value | undefined) {
           },
         }),
       reload: async () => {},
+      get: async () => ({
+        data: {
+          connections: [...accounts].map(([id, credential]) => toConnection(id, credential)),
+        },
+      }),
       connection: {
-        active: async () =>
-          credential
-            ? { type: "credential", id: "active", label: "Anthropic", method: "m" }
-            : undefined,
-        resolve: async () => credential,
+        active: async () => {
+          const credential = activeId ? accounts.get(activeId) : undefined;
+          return activeId && credential ? toConnection(activeId, credential) : undefined;
+        },
+        resolve: async (connection: FakeConnection) => accounts.get(connection.id),
+        status: async () => {},
       },
     },
   };
@@ -92,7 +115,16 @@ export function createV2Context(initial: Credential.Value | undefined) {
     model,
     reloadCount: () => reloads,
     connect(next: Credential.Value | undefined) {
-      credential = next;
+      if (next) {
+        accounts.set("active", next);
+        activeId = "active";
+      } else {
+        accounts.delete("active");
+        activeId = undefined;
+      }
+    },
+    addAccount(id: string, credential: Credential.Value) {
+      accounts.set(id, credential);
     },
     async fire<T extends object>(name: string, event: T): Promise<T> {
       const hook = hooks.get(name);

@@ -18,7 +18,6 @@ import {
   resolveCliTokens,
   type CCSInstance,
 } from "../shared/credentials.ts";
-import { awaitIntro } from "../shared/introspection.ts";
 import { createAuthorizationRequest, createCodeExchange } from "../shared/oauthClient.ts";
 import { createCustomFetch, type AuthStore } from "./fetch.ts";
 
@@ -82,7 +81,7 @@ function browserMethod(): AuthMethod {
     type: "oauth",
     label: browserMethodLabel,
     async authorize() {
-      const { url, verifier } = createAuthorizationRequest((await awaitIntro()).scopes);
+      const { url, verifier } = createAuthorizationRequest();
       const exchange = createCodeExchange(verifier);
       return {
         url,

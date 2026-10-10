@@ -12,3 +12,13 @@ process.env.HOME = sandbox;
 process.env.USER = "fixture-user";
 process.env.PATH = `${stubBin}:/usr/bin:/bin`;
 process.env.TEST_STUB_BIN = stubBin;
+
+const hostFetch = globalThis.fetch;
+globalThis.fetch = Object.assign(
+  async (input: RequestInfo | URL, init?: BunFetchRequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : input.toString());
+    if (url.hostname === "127.0.0.1" || url.hostname === "localhost") return hostFetch(input, init);
+    throw new Error(`unexpected network request in tests: ${url.origin}${url.pathname}`);
+  },
+  { preconnect: hostFetch.preconnect },
+);

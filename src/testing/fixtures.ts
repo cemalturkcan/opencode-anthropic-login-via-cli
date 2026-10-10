@@ -51,13 +51,10 @@ export async function installClaudeStub(onRun?: StoredTokens): Promise<void> {
   await writeExecutable("claude", `${refresh}\nexit 0`);
 }
 
-export async function installClaudeBinary(
-  version: string,
-  embeddedStrings: string[],
-): Promise<void> {
+export async function installClaudeBinary(version: string): Promise<void> {
   await writeExecutable(
     "claude",
-    `: ${embeddedStrings.join(" ")}\nif [ "$1" = "--version" ]; then echo "${version} (Claude Code)"; fi\nexit 0`,
+    `if [ "$1" = "--version" ]; then echo "${version} (Claude Code)"; fi\nexit 0`,
   );
 }
 

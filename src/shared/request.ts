@@ -1,16 +1,38 @@
-import type { IntrospectionResult } from "./constants.ts";
+import type { CliIdentity } from "./constants.ts";
 import { getBetaFlags, getBetasForModel } from "./modelConfig.ts";
+
+const stainlessOs = new Map([
+  ["linux", "Linux"],
+  ["darwin", "MacOS"],
+  ["win32", "Windows"],
+]);
+
+export type OAuthRequestIdentity = {
+  access: string;
+  sessionId: string;
+  cli: CliIdentity;
+};
+
+export function claudeCodeHeaders(): Map<string, string> {
+  return new Map([
+    ["anthropic-dangerous-direct-browser-access", "true"],
+    ["x-stainless-arch", process.arch],
+    ["x-stainless-lang", "js"],
+    ["x-stainless-os", stainlessOs.get(process.platform) ?? `Other:${process.platform}`],
+    ["x-stainless-package-version", "0.128.0"],
+    ["x-stainless-retry-count", "0"],
+    ["x-stainless-runtime", "node"],
+    ["x-stainless-runtime-version", "v26.3.0"],
+    ["x-stainless-timeout", "600"],
+  ]);
+}
 
 export function hasJsonContentType(headers: Headers): boolean {
   return headers.get("content-type")?.toLowerCase().includes("application/json") ?? false;
 }
 
-export function mergeBetas(
-  modelId: string | null,
-  introBetas: string[],
-  incoming: string | null,
-): string {
-  const defaults = getBetaFlags(introBetas);
+export function mergeBetas(modelId: string | null, incoming: string | null): string {
+  const defaults = getBetaFlags();
   const modelBetas = modelId ? getBetasForModel(modelId, defaults) : defaults;
   const incomingBetas = (incoming ?? "")
     .split(",")
@@ -21,16 +43,15 @@ export function mergeBetas(
 
 export function applyOAuthHeaders(
   headers: Headers,
-  access: string,
   modelId: string | null,
-  intro: IntrospectionResult,
+  identity: OAuthRequestIdentity,
 ): void {
-  headers.set("authorization", `Bearer ${access}`);
-  headers.set(
-    "anthropic-beta",
-    mergeBetas(modelId, intro.betaHeaders, headers.get("anthropic-beta")),
-  );
-  headers.set("user-agent", intro.userAgent);
+  for (const [name, value] of claudeCodeHeaders()) headers.set(name, value);
+  if (!headers.has("anthropic-version")) headers.set("anthropic-version", "2023-06-01");
+  headers.set("authorization", `Bearer ${identity.access}`);
+  headers.set("anthropic-beta", mergeBetas(modelId, headers.get("anthropic-beta")));
+  headers.set("user-agent", identity.cli.userAgent);
   headers.set("x-app", "cli");
+  headers.set("x-claude-code-session-id", identity.sessionId);
   headers.delete("x-api-key");
 }
