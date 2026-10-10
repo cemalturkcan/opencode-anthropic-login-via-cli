@@ -176,7 +176,7 @@ function buildHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
   return reqHeaders;
 }
 
-function addBetaParam(input: RequestInfo | URL): RequestInfo | URL {
+export function addBetaParam(input: RequestInfo | URL): RequestInfo | URL {
   try {
     let reqUrl: URL | null = null;
     if (typeof input === "string" || input instanceof URL) {

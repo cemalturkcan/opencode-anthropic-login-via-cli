@@ -29,11 +29,15 @@ Opens an OAuth flow through `claude.com` for users without the CLI. Log in, past
 
 ### Token Refresh
 
-Handles expired tokens automatically. Falls back to the CLI if the standard refresh fails.
+Handles expired tokens automatically. V1 falls back to the CLI if standard refresh fails.
 
 ### Request Patching
 
 Patches requests so OpenCode talks to Anthropic's API the same way Claude Code does.
+
+## Compatibility
+
+Supports OpenCode V1 (1.18.29+) and V2 (tested on 2.0.26). V2 refreshes tokens normally but does not fall back to another account.
 
 ## Install
 
