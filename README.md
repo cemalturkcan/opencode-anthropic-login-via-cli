@@ -29,7 +29,7 @@ Opens an OAuth flow through `claude.com` for users without the CLI. Log in, past
 
 ### Token Refresh
 
-Handles expired tokens automatically. V1 falls back to the CLI if standard refresh fails.
+Handles expired tokens automatically. V1 and V2 fall back to valid Claude CLI credentials if standard refresh fails. V2 preserves the authentication method and supports the legacy `oauth` method ID used by migrated V1 credentials; CCS refresh failures do not switch accounts.
 
 ### Request Patching
 
@@ -37,7 +37,7 @@ Patches requests so OpenCode talks to Anthropic's API the same way Claude Code d
 
 ## Compatibility
 
-Supports OpenCode V1 (1.18.29+) and V2 (tested on 2.0.26). V2 refreshes tokens normally but does not fall back to another account.
+Supports OpenCode V1 (1.18.29+) and V2 (tested on 2.0.26). V2 supports migrated V1 OAuth credentials and CLI recovery after token-refresh failures, but does not switch accounts after Anthropic request failures.
 
 ## Install
 

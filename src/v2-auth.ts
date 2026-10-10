@@ -26,7 +26,23 @@ function oauthCredential(
 }
 
 async function refreshCredential(credential: OAuthCredential): Promise<OAuthCredential> {
-  const tokens = await refreshTokensSafe(credential.refresh);
+  let tokens;
+  try {
+    tokens = await refreshTokensSafe(credential.refresh);
+  } catch (error) {
+    log.warn("V2 OAuth refresh failed", { methodID: credential.methodID, error: String(error) });
+    if (
+      credential.methodID !== "claude-cli" &&
+      credential.methodID !== "claude-browser" &&
+      credential.methodID !== "oauth"
+    ) {
+      throw error;
+    }
+    tokens = await readClaudeCodeCredentials();
+    if (!tokens || isExpiringSoon(tokens.expires)) tokens = await refreshViaClaudeCli();
+    if (!tokens || isExpiringSoon(tokens.expires)) throw error;
+    log.info("V2 OAuth refresh recovered from CLI credentials");
+  }
   setCurrentRefreshToken(tokens.refresh);
   return oauthCredential(credential.methodID, tokens);
 }
@@ -113,9 +129,14 @@ function oauthMethods(instances: CCSInstance[], markOAuthConnected: () => Promis
       }),
       refresh: refreshCredential,
     })),
-    {
+    // V1 credentials migrate to V2 with the method ID "oauth".
+    ...["claude-browser", "oauth"].map((methodID) => ({
       integrationID: "anthropic",
-      method: { id: "claude-browser", type: "oauth" as const, label: "Claude Pro/Max (browser)" },
+      method: {
+        id: methodID,
+        type: "oauth" as const,
+        label: methodID === "oauth" ? "Claude Pro/Max (legacy)" : "Claude Pro/Max (browser)",
+      },
       authorize: async () => {
         const { scopes } = await awaitIntro();
         const { url, verifier } = createAuthorizationRequest(scopes);
@@ -128,7 +149,7 @@ function oauthMethods(instances: CCSInstance[], markOAuthConnected: () => Promis
             try {
               const tokens = await exchangeCodeForTokens(code, verifier, getIntro().userAgent);
               await markOAuthConnected();
-              return oauthCredential("claude-browser", tokens);
+              return oauthCredential(methodID, tokens);
             } catch (error) {
               log.error("V2 token exchange failed", { error: String(error) });
               throw error;
@@ -137,7 +158,7 @@ function oauthMethods(instances: CCSInstance[], markOAuthConnected: () => Promis
         };
       },
       refresh: refreshCredential,
-    },
+    })),
   ];
 }
 

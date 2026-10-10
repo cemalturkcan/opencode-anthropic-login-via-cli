@@ -254,15 +254,15 @@ describe("V1 and V2 auth adapters", () => {
     });
 
     globalThis.fetch = (async () => new Response("expired", { status: 400 })) as typeof fetch;
-    await expect(
-      v2Cli.refresh({
+    expect(
+      await v2Cli.refresh({
         type: "oauth",
         methodID: "claude-cli",
         access: "fixture-expired-access",
         refresh: "invalid-refresh",
         expires: 0,
       }),
-    ).rejects.toThrow("Token refresh failed: 400");
+    ).toMatchObject({ methodID: "claude-cli", access: "fixture-cli-access" });
     await expect(
       v2Ccs.refresh({
         type: "oauth",
@@ -292,6 +292,91 @@ describe("V1 and V2 auth adapters", () => {
     expect(await v2.context.integration.connection.resolve(connection)).toEqual({
       type: "key",
       key: "fixture-api-key",
+    });
+  });
+
+  it("recovers an expired V2 browser credential from valid CLI credentials", async () => {
+    await useIsolatedCredentials();
+    const v2 = makeV2Context(undefined, undefined);
+    await setupV2Auth(v2.context as never, [], () => {});
+    globalThis.fetch = (async () =>
+      new Response("invalid refresh token", { status: 400 })) as typeof fetch;
+
+    const credential = await v2.methods.get("claude-browser").refresh({
+      type: "oauth",
+      methodID: "claude-browser",
+      access: "expired-browser-access",
+      refresh: "invalid-browser-refresh",
+      expires: 0,
+    });
+
+    expect(credential).toMatchObject({
+      type: "oauth",
+      methodID: "claude-browser",
+      access: "fixture-cli-access",
+      refresh: "fixture-cli-refresh",
+    });
+    expect(credential.expires).toBeGreaterThan(Date.now());
+  });
+
+  it("rejects V2 browser refresh when CLI credentials remain expired", async () => {
+    await useIsolatedCredentials();
+    await writeFile(
+      join(testHome, "cli-credentials.json"),
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: "expired-cli-access",
+          refreshToken: "expired-cli-refresh",
+          expiresAt: 0,
+        },
+      }),
+    );
+    const v2 = makeV2Context(undefined, undefined);
+    await setupV2Auth(v2.context as never, [], () => {});
+    globalThis.fetch = (async () =>
+      new Response("invalid refresh token", { status: 400 })) as typeof fetch;
+
+    await expect(
+      v2.methods.get("claude-browser").refresh({
+        type: "oauth",
+        methodID: "claude-browser",
+        access: "expired-browser-access",
+        refresh: "invalid-browser-refresh",
+        expires: 0,
+      }),
+    ).rejects.toThrow("Token refresh failed: 400");
+  });
+
+  it("refreshes migrated V1 OAuth credentials through the legacy method ID", async () => {
+    await useIsolatedCredentials();
+    const v2 = makeV2Context(
+      { type: "credential", id: "legacy", method: "oauth" },
+      {
+        type: "oauth",
+        methodID: "oauth",
+        access: "expired-access",
+        refresh: "old-refresh",
+        expires: 0,
+      },
+    );
+    await setupV2Auth(v2.context as never, [], () => {});
+    const legacy = v2.methods.get("oauth");
+    expect(legacy).toBeDefined();
+    globalThis.fetch = (async () =>
+      new Response("invalid refresh token", { status: 400 })) as typeof fetch;
+
+    expect(
+      await legacy.refresh({
+        type: "oauth",
+        methodID: "oauth",
+        access: "expired-access",
+        refresh: "old-refresh",
+        expires: 0,
+      }),
+    ).toMatchObject({
+      methodID: "oauth",
+      access: "fixture-cli-access",
+      refresh: "fixture-cli-refresh",
     });
   });
 });
