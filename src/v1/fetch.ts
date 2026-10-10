@@ -16,6 +16,7 @@ import { reportVersionGate } from "../shared/versionGate.ts";
 import { applyOAuthHeaders, hasJsonContentType } from "../shared/request.ts";
 import {
   transformRequestBody,
+  withAccountMetadata,
   withUnprefixedToolNames,
   type BodyContext,
 } from "../shared/transforms.ts";
@@ -152,8 +153,11 @@ async function retryWithRecoveredCredentials(
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${tokens.access}`);
   log.info("retrying with recovered credentials");
-  const retryInit: BunFetchRequestInit = { ...init, headers };
-  return fetch(input, retryInit);
+  const retryBody = isTextBody(init.body)
+    ? withAccountMetadata(init.body, (await accountProfile(tokens.access))?.uuid ?? null)
+    : init.body;
+  const retryInit: BunFetchRequestInit = { ...init, headers, body: retryBody };
+  return reportVersionGate(await fetch(input, retryInit));
 }
 
 function unauthenticated(): Response {

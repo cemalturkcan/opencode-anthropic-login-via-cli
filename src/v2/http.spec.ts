@@ -180,9 +180,11 @@ describe("V2 http.response hook", () => {
     const v2 = await setup();
     v2.addAccount("work", oauthCredential("ccs-work", "work"));
     const authorizations: (string | null)[] = [];
-    replaceFetch((input) => {
+    const accounts: string[] = [];
+    replaceFetch(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       authorizations.push(request.headers.get("authorization"));
+      accounts.push(JSON.parse(JSON.parse(await request.text()).metadata.user_id).account_uuid);
       return Response.json({ content: [{ type: "tool_use", name: "mcp_Bash" }] });
     });
     const { request } = await v2.fire<RequestEvent>("http.request", {
@@ -199,6 +201,7 @@ describe("V2 http.response hook", () => {
     });
 
     expect(authorizations).toEqual(["Bearer work"]);
+    expect(accounts).toEqual(["work-uuid"]);
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('"name": "bash"');
   });

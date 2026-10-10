@@ -38,7 +38,6 @@ export const cliMethodId = "claude-cli";
 export const browserMethodId = "claude-browser";
 export const migratedV1MethodId = "oauth";
 const migratedV1MethodLabel = "Claude Pro/Max (migrated from OpenCode V1)";
-const cliRecoverableMethodIds = new Set([cliMethodId, browserMethodId, migratedV1MethodId]);
 
 function ccsMethodId(instance: CCSInstance): string {
   return `ccs-${instance.name}`;
@@ -59,9 +58,25 @@ async function connectedCredential(
   return { ...credential, metadata: { email: profile.email, accountUuid: profile.uuid } };
 }
 
-export function credentialLabel(credential: OAuthCredential): string | undefined {
+function metadataField(credential: OAuthCredential, field: string): string | undefined {
   const metadata = parseJson(JSON.stringify(credential.metadata ?? {}));
-  return isJsonObject(metadata) && isJsonString(metadata.email) ? metadata.email : undefined;
+  if (!isJsonObject(metadata)) return undefined;
+  const value = metadata[field];
+  return isJsonString(value) ? value : undefined;
+}
+
+export function credentialLabel(credential: OAuthCredential): string | undefined {
+  return metadataField(credential, "email");
+}
+
+async function isSameAccount(
+  credential: OAuthCredential,
+  recovered: OAuthTokens,
+): Promise<boolean> {
+  if (credential.methodID === cliMethodId) return true;
+  const expected = metadataField(credential, "accountUuid");
+  if (!expected) return credential.methodID === migratedV1MethodId;
+  return (await accountProfile(recovered.access))?.uuid === expected;
 }
 
 function withTokens(credential: OAuthCredential, tokens: OAuthTokens): OAuthCredential {
@@ -72,10 +87,10 @@ async function refreshCredential(credential: OAuthCredential): Promise<OAuthCred
   try {
     return withTokens(credential, await refreshTokensOnce(credential.refresh));
   } catch (failure) {
-    if (!cliRecoverableMethodIds.has(credential.methodID)) throw failure;
+    if (credential.methodID.startsWith("ccs-")) throw failure;
 
     const recovered = await readFreshCliCredentials();
-    if (!recovered) throw failure;
+    if (!recovered || !(await isSameAccount(credential, recovered))) throw failure;
     log.info("recovered oauth refresh from claude cli credentials", {
       methodID: credential.methodID,
     });

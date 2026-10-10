@@ -245,9 +245,11 @@ describe("createCustomFetch", () => {
     await writeCliCredentials(validTokens("cli"));
     const store = recordingStore();
     const authorizations: (string | null)[] = [];
+    const accounts: string[] = [];
     replaceFetch(async (input, init) => {
       const sent = await record(input, init);
       authorizations.push(sent.headers.get("authorization"));
+      accounts.push(JSON.parse(JSON.parse(sent.body).metadata.user_id).account_uuid);
       return authorizations.length === 1
         ? new Response("unauthorized", { status: 401 })
         : new Response("ok");
@@ -260,6 +262,7 @@ describe("createCustomFetch", () => {
 
     expect(await response.text()).toBe("ok");
     expect(authorizations).toEqual(["Bearer current-access", "Bearer cli-access"]);
+    expect(accounts).toEqual(["current-access-uuid", "cli-access-uuid"]);
     expect(store.saved[0]?.access).toBe("cli-access");
   });
 

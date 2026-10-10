@@ -8,6 +8,7 @@ import { isTerminalRateLimit, rateLimitResetAt } from "../shared/rateLimit.ts";
 import { applyOAuthHeaders, hasJsonContentType } from "../shared/request.ts";
 import {
   transformRequestBody,
+  withAccountMetadata,
   withUnprefixedToolNames,
   type BodyContext,
 } from "../shared/transforms.ts";
@@ -55,11 +56,17 @@ export async function prepareOAuthRequest(
   return { request: rewriteOrigin(addBetaParam(new Request(request, init))), body };
 }
 
-function replayWith(sent: Request, body: string, access: string): Request {
+async function replayWith(sent: Request, body: string, access: string): Promise<Request> {
   const headers = new Headers(sent.headers);
   headers.set("authorization", `Bearer ${access}`);
   headers.delete("content-length");
-  return new Request(sent.url, { method: sent.method, headers, body, signal: sent.signal });
+  const accountUuid = (await accountProfile(access))?.uuid ?? null;
+  return new Request(sent.url, {
+    method: sent.method,
+    headers,
+    body: withAccountMetadata(body, accountUuid),
+    signal: sent.signal,
+  });
 }
 
 export async function setupV2Http(
@@ -88,7 +95,10 @@ export async function setupV2Http(
       rateLimitResetAt(response.headers),
     );
     if (!alternative) return response;
-    return fetch(replayWith(sent, record.body, alternative.credential.access));
+    await response.body?.cancel();
+    return reportVersionGate(
+      await fetch(await replayWith(sent, record.body, alternative.credential.access)),
+    );
   }
 
   await session.hook(

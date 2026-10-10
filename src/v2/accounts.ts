@@ -22,12 +22,14 @@ function connectionKey(connection: Connection): string {
   return connection.type === "credential" ? connection.id : `env:${connection.name}`;
 }
 
+type Pin = { key: string; from: string; until: number };
+
 export function createAccountRouter(
   integration: AccountIntegration,
   now: () => number = Date.now,
 ): AccountRouter {
   const cooldowns = new Map<string, number>();
-  const pins = new Map<string, string>();
+  const pins = new Map<string, Pin>();
 
   const isCooling = (connection: Connection) =>
     (cooldowns.get(connectionKey(connection)) ?? 0) > now();
@@ -63,18 +65,31 @@ export function createAccountRouter(
     }
   }
 
+  async function firstUsable(candidates: Connection[]): Promise<SelectedAccount | undefined> {
+    const [next, ...rest] = candidates;
+    if (!next) return undefined;
+    return (await resolveOAuth(next)) ?? firstUsable(rest);
+  }
+
   async function firstHealthy(excluded: string): Promise<SelectedAccount | undefined> {
     const candidates = (await oauthConnections()).filter(
       (connection) => connectionKey(connection) !== excluded && !isCooling(connection),
     );
-    const resolved = await Promise.all(candidates.map(resolveOAuth));
-    return resolved.find((account) => account !== undefined);
+    return firstUsable(candidates);
   }
 
-  async function pinnedAccount(sessionID: string): Promise<SelectedAccount | undefined> {
-    const pinned = pins.get(sessionID);
-    if (!pinned) return undefined;
-    const connection = (await oauthConnections()).find((entry) => connectionKey(entry) === pinned);
+  async function pinnedAccount(
+    sessionID: string,
+    activeKey: string,
+  ): Promise<SelectedAccount | undefined> {
+    const pin = pins.get(sessionID);
+    if (!pin) return undefined;
+    if (pin.from !== activeKey || pin.until <= now()) {
+      pins.delete(sessionID);
+      return undefined;
+    }
+
+    const connection = (await oauthConnections()).find((entry) => connectionKey(entry) === pin.key);
     const account =
       connection && !isCooling(connection) ? await resolveOAuth(connection) : undefined;
     if (!account) pins.delete(sessionID);
@@ -83,13 +98,13 @@ export function createAccountRouter(
 
   return {
     async select(sessionID) {
-      const pinned = await pinnedAccount(sessionID);
-      if (pinned) return pinned;
-
       const active = await activeConnection();
       if (!active) return undefined;
-      if (isCooling(active))
-        return (await firstHealthy(connectionKey(active))) ?? resolveOAuth(active);
+      const activeKey = connectionKey(active);
+
+      const pinned = await pinnedAccount(sessionID, activeKey);
+      if (pinned) return pinned;
+      if (isCooling(active)) return (await firstHealthy(activeKey)) ?? resolveOAuth(active);
       return resolveOAuth(active);
     },
 
@@ -99,10 +114,16 @@ export function createAccountRouter(
       const alternative = await firstHealthy(failedKey);
       if (!alternative) return undefined;
 
-      pins.set(sessionID, connectionKey(alternative.connection));
+      const active = await activeConnection();
+      pins.set(sessionID, {
+        key: connectionKey(alternative.connection),
+        from: active ? connectionKey(active) : failedKey,
+        until: coolUntil,
+      });
       log.info("switched anthropic account after a rate limit", {
-        from: failed.connection.type === "credential" ? failed.connection.label : failedKey,
-        to: alternative.connection.type === "credential" ? alternative.connection.label : "env",
+        from: failedKey,
+        to: connectionKey(alternative.connection),
+        until: new Date(coolUntil).toISOString(),
       });
       return alternative;
     },

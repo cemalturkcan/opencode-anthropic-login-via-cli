@@ -1,6 +1,7 @@
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CCSInstance } from "../shared/credentials.ts";
+import { resetIdentityCache } from "../shared/identity.ts";
 import { ccsInstancesDirectory, claudeCredentialsPath, homeDirectory } from "../shared/paths.ts";
 
 export type StoredTokens = { access: string; refresh: string; expiresAt: number };
@@ -67,6 +68,7 @@ export async function writeCcsInstance(name: string, tokens: StoredTokens): Prom
 }
 
 export async function resetSandbox(): Promise<void> {
+  resetIdentityCache();
   await rm(join(homeDirectory(), ".claude"), { recursive: true, force: true });
   await rm(join(homeDirectory(), ".ccs"), { recursive: true, force: true });
   await rm(stubBin(), { recursive: true, force: true });

@@ -143,7 +143,7 @@ describe("V2 refresh", () => {
     });
   });
 
-  it.each(["claude-cli", "claude-browser", "oauth"])(
+  it.each(["claude-cli", "oauth"])(
     "recovers a failed %s refresh from fresh claude cli credentials",
     async (methodID) => {
       await writeCliCredentials(validTokens("cli"));
@@ -156,6 +156,38 @@ describe("V2 refresh", () => {
       });
     },
   );
+
+  it("recovers a browser account from the cli only when it is the same account", async () => {
+    await writeCliCredentials(validTokens("cli"));
+    replaceFetch(rejectedRefresh);
+    const v2 = await setup();
+    const sameAccount = staleCredential("claude-browser", { accountUuid: "cli-access-uuid" });
+
+    expect(await v2.method("claude-browser").refresh(sameAccount)).toMatchObject({
+      access: "cli-access",
+    });
+  });
+
+  it("never turns a browser account into the different cli account", async () => {
+    await writeCliCredentials(validTokens("cli"));
+    replaceFetch(rejectedRefresh);
+    const v2 = await setup();
+    const otherAccount = staleCredential("claude-browser", { accountUuid: "browser-uuid" });
+
+    await expect(v2.method("claude-browser").refresh(otherAccount)).rejects.toThrow(
+      "Token refresh failed: 400",
+    );
+  });
+
+  it("never recovers a browser account without a known account", async () => {
+    await writeCliCredentials(validTokens("cli"));
+    replaceFetch(rejectedRefresh);
+    const v2 = await setup();
+
+    await expect(
+      v2.method("claude-browser").refresh(staleCredential("claude-browser")),
+    ).rejects.toThrow("Token refresh failed: 400");
+  });
 
   it("rejects a failed browser refresh when the cli credentials are expired too", async () => {
     await installClaudeStub();

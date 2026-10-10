@@ -29,7 +29,7 @@ Opens an OAuth flow through `claude.com` for users without the CLI. Log in, past
 
 ### Token Refresh
 
-Handles expired tokens automatically. V1 and V2 fall back to valid Claude CLI credentials if standard refresh fails. V2 preserves the authentication method and supports the legacy `oauth` method ID used by migrated V1 credentials; CCS refresh failures do not switch accounts.
+Handles expired tokens automatically. When a refresh fails, the plugin falls back to valid Claude CLI credentials only when they belong to the same account: always for the Claude Code method, for browser logins whose account matches, and for credentials migrated from V1. CCS accounts are never replaced.
 
 ### Request Patching
 
@@ -45,7 +45,7 @@ Every login is a separate V2 account labeled with its email. When an account hit
 
 ## Compatibility
 
-Supports OpenCode V1 (1.18.29+) and V2 (tested on 2.0.26). V2 supports migrated V1 OAuth credentials and CLI recovery after token-refresh failures, but does not switch accounts after Anthropic request failures.
+Supports OpenCode V1 (1.18.29+) and V2 (plugin SDK 2.0.26). On V2, credentials migrated from V1 keep refreshing, and rate-limited requests can move to another logged-in account as described above.
 
 ## Install
 

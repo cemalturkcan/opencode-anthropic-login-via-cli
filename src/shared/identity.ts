@@ -5,19 +5,24 @@ import { getIntro } from "./introspection.ts";
 import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { log } from "./logger.ts";
 import { claudeConfigPath } from "./paths.ts";
+import { rewriteOrigin } from "./proxy.ts";
 
 export type AccountProfile = { uuid: string; email: string };
 
 const profileUrl = "https://api.anthropic.com/api/oauth/profile";
 const claudeUserId = /^[0-9a-f]{64}$/;
 const maxCachedProfiles = 16;
+const profileTimeoutMs = 2000;
+const failedProfileRetryMs = 10 * 60_000;
 
 let cachedDeviceId: Promise<string> | null = null;
 const profiles = new Map<string, Promise<AccountProfile | null>>();
+const failedProfiles = new Map<string, number>();
 
 export function resetIdentityCache(): void {
   cachedDeviceId = null;
   profiles.clear();
+  failedProfiles.clear();
 }
 
 async function claudeCodeUserId(): Promise<string | null> {
@@ -47,14 +52,14 @@ function parseProfile(body: JsonValue): AccountProfile | null {
 
 async function fetchProfile(access: string): Promise<AccountProfile | null> {
   try {
-    const response = await fetch(profileUrl, {
+    const response = await fetch(rewriteOrigin(profileUrl), {
       headers: {
         authorization: `Bearer ${access}`,
         "anthropic-beta": "oauth-2025-04-20",
         "user-agent": getIntro().userAgent,
         "content-type": "application/json",
       },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(profileTimeoutMs),
     });
     if (!response.ok) {
       log.warn("oauth profile request failed", { status: response.status });
@@ -67,14 +72,21 @@ async function fetchProfile(access: string): Promise<AccountProfile | null> {
   }
 }
 
-export function accountProfile(access: string): Promise<AccountProfile | null> {
+export async function accountProfile(
+  access: string,
+  now: () => number = Date.now,
+): Promise<AccountProfile | null> {
+  if ((failedProfiles.get(access) ?? 0) > now()) return null;
   const cached = profiles.get(access);
   if (cached) return cached;
 
   if (profiles.size >= maxCachedProfiles) profiles.clear();
   const profile = fetchProfile(access).then((result) => {
-    if (!result) profiles.delete(access);
-    return result;
+    if (result) return result;
+    profiles.delete(access);
+    if (failedProfiles.size >= maxCachedProfiles) failedProfiles.clear();
+    failedProfiles.set(access, now() + failedProfileRetryMs);
+    return null;
   });
   profiles.set(access, profile);
   return profile;

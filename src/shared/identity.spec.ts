@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { rm, writeFile } from "node:fs/promises";
 import { replaceEveryFetch, restoreFetchAfterEach } from "../testing/fetch.ts";
 import { accountProfile, deviceId, resetIdentityCache } from "./identity.ts";
 import { claudeConfigPath } from "./paths.ts";
 
 restoreFetchAfterEach();
+afterEach(() => {
+  delete process.env.ANTHROPIC_BASE_URL;
+});
+
 beforeEach(async () => {
   resetIdentityCache();
   await rm(claudeConfigPath(), { force: true });
@@ -66,15 +70,30 @@ describe("accountProfile", () => {
     expect(await accountProfile("revoked")).toBeNull();
   });
 
-  it("asks again after a failed profile request", async () => {
+  it("does not ask again for ten minutes after a failed profile request", async () => {
     let calls = 0;
     replaceEveryFetch(() => {
       calls++;
       return calls === 1 ? new Response("busy", { status: 503 }) : Response.json(profileBody);
     });
 
-    expect(await accountProfile("retry")).toBeNull();
-    expect((await accountProfile("retry"))?.uuid).toBe("account-uuid");
+    expect(await accountProfile("retry", () => 0)).toBeNull();
+    expect(await accountProfile("retry", () => 9 * 60_000)).toBeNull();
+    expect(calls).toBe(1);
+    expect((await accountProfile("retry", () => 11 * 60_000))?.uuid).toBe("account-uuid");
+  });
+
+  it("asks the profile through ANTHROPIC_BASE_URL", async () => {
+    process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:9";
+    const urls: string[] = [];
+    replaceEveryFetch((input) => {
+      urls.push(String(input));
+      return Response.json(profileBody);
+    });
+
+    await accountProfile("proxied");
+
+    expect(urls).toEqual(["http://127.0.0.1:9/api/oauth/profile"]);
   });
 
   it("returns null for an unexpected profile body", async () => {

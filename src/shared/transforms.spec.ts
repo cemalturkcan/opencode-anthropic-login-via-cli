@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import {
   createToolNameUnprefixStream,
   transformRequestBody,
+  withAccountMetadata,
   withUnprefixedToolNames,
 } from "./transforms.ts";
 
@@ -366,6 +367,19 @@ describe("prompt cache ttl", () => {
     expect(JSON.parse(transformRequestBody(body).body).system.at(-1).cache_control.ttl).toBe("5m");
   });
 
+  it("keeps every breakpoint at five minutes when the caller already chose 5m somewhere", () => {
+    const body = JSON.stringify({
+      model: "m",
+      tools: [{ name: "bash", cache_control: { type: "ephemeral", ttl: "5m" } }],
+      system: [{ type: "text", text: "Rules.", cache_control: { type: "ephemeral" } }],
+      messages: [],
+    });
+
+    const parsed = JSON.parse(transformRequestBody(body).body);
+
+    expect(parsed.system.at(-1).cache_control).toEqual({ type: "ephemeral" });
+  });
+
   it("leaves breakpoints alone when ANTHROPIC_PROMPT_CACHE_TTL is 5m", () => {
     process.env.ANTHROPIC_PROMPT_CACHE_TTL = "5m";
 
@@ -409,5 +423,37 @@ describe("request metadata", () => {
     expect(
       JSON.parse(transformRequestBody(body, { ...context, accountUuid: null }).body).metadata,
     ).toBeUndefined();
+  });
+});
+
+describe("withAccountMetadata", () => {
+  const context = { sessionId: "session", deviceId: "device", accountUuid: "first" };
+
+  function transformedBody() {
+    return transformRequestBody(JSON.stringify({ model: "m", messages: [] }), context).body;
+  }
+
+  it("swaps the account uuid for a replay with another account", () => {
+    const replayed = JSON.parse(withAccountMetadata(transformedBody(), "second"));
+
+    expect(JSON.parse(replayed.metadata.user_id)).toEqual({
+      device_id: "device",
+      account_uuid: "second",
+      session_id: "session",
+    });
+  });
+
+  it("drops the user id when the other account is unknown", () => {
+    expect(JSON.parse(withAccountMetadata(transformedBody(), null)).metadata).toEqual({});
+  });
+
+  it("leaves a user id chosen by the caller alone", () => {
+    const body = JSON.stringify({ model: "m", metadata: { user_id: "caller" } });
+
+    expect(JSON.parse(withAccountMetadata(body, "second")).metadata.user_id).toBe("caller");
+  });
+
+  it("returns unparseable bodies unchanged", () => {
+    expect(withAccountMetadata("not json", "second")).toBe("not json");
   });
 });

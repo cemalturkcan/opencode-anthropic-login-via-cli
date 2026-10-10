@@ -61,6 +61,7 @@ export function createV2Context(initial: Credential.Value | undefined) {
   const pristineCost = structuredClone(model.cost);
   let transform: ((editor: FakeModelEditor) => void) | undefined;
   let reloads = 0;
+  let resolves = 0;
 
   const context = {
     session: {
@@ -102,7 +103,10 @@ export function createV2Context(initial: Credential.Value | undefined) {
           const credential = activeId ? accounts.get(activeId) : undefined;
           return activeId && credential ? toConnection(activeId, credential) : undefined;
         },
-        resolve: async (connection: FakeConnection) => accounts.get(connection.id),
+        resolve: async (connection: FakeConnection) => {
+          resolves++;
+          return accounts.get(connection.id);
+        },
         status: async () => {},
       },
     },
@@ -114,6 +118,10 @@ export function createV2Context(initial: Credential.Value | undefined) {
     methods,
     model,
     reloadCount: () => reloads,
+    resolveCount: () => resolves,
+    activate(id: string) {
+      activeId = id;
+    },
     connect(next: Credential.Value | undefined) {
       if (next) {
         accounts.set("active", next);

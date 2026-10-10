@@ -122,9 +122,13 @@ function withContentCacheTtl(message: JsonValue, ttl: string): JsonValue {
   return { ...message, content: message.content.map((block) => withCacheTtl(block, ttl)) };
 }
 
+function hasShortTtlBreakpoint(body: JsonObject): boolean {
+  return /"cache_control"\s*:\s*\{[^}]*"ttl"\s*:\s*"5m"/.test(JSON.stringify(body));
+}
+
 function applyCacheTtl(body: JsonObject): void {
   const ttl = promptCacheTtl();
-  if (!ttl) return;
+  if (!ttl || hasShortTtlBreakpoint(body)) return;
   if (Array.isArray(body.system))
     body.system = body.system.map((block) => withCacheTtl(block, ttl));
   if (Array.isArray(body.tools)) body.tools = body.tools.map((tool) => withCacheTtl(tool, ttl));
@@ -144,6 +148,26 @@ function applyMetadata(body: JsonObject, context: BodyContext | undefined): void
     session_id: context.sessionId,
   });
   body.metadata = { ...metadata, user_id: userId };
+}
+
+function claudeCodeUserId(value: JsonValue | undefined): JsonObject | null {
+  if (!isJsonString(value)) return null;
+  const parsed = parseJson(value);
+  if (!isJsonObject(parsed)) return null;
+  return isJsonString(parsed.device_id) && isJsonString(parsed.session_id) ? parsed : null;
+}
+
+export function withAccountMetadata(rawBody: string, accountUuid: string | null): string {
+  const body = parseJson(rawBody);
+  if (!isJsonObject(body) || !isJsonObject(body.metadata)) return rawBody;
+  const userId = claudeCodeUserId(body.metadata.user_id);
+  if (!userId) return rawBody;
+
+  const { user_id: _previous, ...metadata } = body.metadata;
+  body.metadata = accountUuid
+    ? { ...metadata, user_id: JSON.stringify({ ...userId, account_uuid: accountUuid }) }
+    : metadata;
+  return JSON.stringify(body);
 }
 
 function toMessage(value: JsonObject): Message {

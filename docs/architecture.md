@@ -71,3 +71,4 @@ V1 retries 401, 429 and 529 once with alternate CLI or CCS credentials. V2 repla
 | `ANTHROPIC_USER_AGENT`        | Override the user agent                                  |
 | `ANTHROPIC_BASE_URL`          | Send requests to another origin, such as a local proxy   |
 | `ANTHROPIC_INSECURE`          | Skip TLS verification for `ANTHROPIC_BASE_URL` (V1 only) |
+| `ANTHROPIC_PROMPT_CACHE_TTL`  | `5m` keeps the five minute cache; default is `1h`        |
