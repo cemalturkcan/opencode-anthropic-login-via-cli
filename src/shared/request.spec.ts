@@ -68,17 +68,21 @@ describe("applyOAuthHeaders", () => {
   });
 
   it("drops the opencode session headers claude code never sends", () => {
-    const headers = new Headers({
-      "x-opencode-session-id": "ses_1",
-      "x-session-id": "ses_1",
-      "x-session-affinity": "ses_1",
-    });
+    const openCodeHeaders = [
+      "x-opencode-session-id",
+      "x-opencode-session",
+      "x-opencode-client",
+      "x-opencode-project",
+      "x-session-id",
+      "x-session-affinity",
+      "traceparent",
+      "b3",
+    ];
+    const headers = new Headers(openCodeHeaders.map((name) => [name, "value"]));
 
     applyOAuthHeaders(headers, null, identity);
 
-    expect(headers.has("x-opencode-session-id")).toBe(false);
-    expect(headers.has("x-session-id")).toBe(false);
-    expect(headers.has("x-session-affinity")).toBe(false);
+    expect(openCodeHeaders.filter((name) => headers.has(name))).toEqual([]);
   });
 
   it("keeps an anthropic-version chosen by the caller", () => {

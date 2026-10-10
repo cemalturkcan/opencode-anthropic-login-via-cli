@@ -69,6 +69,10 @@ rm -rf ~/.cache/opencode/node_modules/
 
 Then restart OpenCode. It re-downloads the plugin on the next launch.
 
+### Local Build
+
+Run `bun run build` and point OpenCode at the output. OpenCode V1 takes the file (`"plugin": ["file:///path/to/repo/dist/index.js"]`); OpenCode V2 takes the directory (`"plugins": ["/path/to/repo/dist"]`).
+
 ## Auth Methods
 
 | Method  | Label                    | How it works                                            |

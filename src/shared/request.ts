@@ -1,7 +1,16 @@
 import type { CliIdentity } from "./constants.ts";
 import { getBetaFlags, getBetasForModel } from "./modelConfig.ts";
 
-const openCodeOnlyHeaders = ["x-opencode-session-id", "x-session-id", "x-session-affinity"];
+const openCodeOnlyHeaders = [
+  "x-opencode-session-id",
+  "x-opencode-session",
+  "x-opencode-client",
+  "x-opencode-project",
+  "x-session-id",
+  "x-session-affinity",
+  "traceparent",
+  "b3",
+];
 
 const stainlessOs = new Map([
   ["linux", "Linux"],
