@@ -272,6 +272,7 @@ describe("V2 http.response hook", () => {
       kind: "primary",
       request: messagesRequest({ signal: controller.signal }),
     });
+    request.headers.set("content-length", "5");
     const sentBody = JSON.parse(await request.clone().text());
     let replayed: Request | undefined;
     replaceFetch((input) => {

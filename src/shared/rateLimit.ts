@@ -22,8 +22,13 @@ export function parseRetryAfterMs(retryAfter: string | null, now = Date.now()): 
   return Number.isNaN(date) ? null : Math.max(0, date - now);
 }
 
+const minimumCooldownMs = 30_000;
+
 export function rateLimitResetAt(headers: Headers, now = Date.now()): number {
   const unified = Number(headers.get("anthropic-ratelimit-unified-reset"));
-  if (Number.isFinite(unified) && unified > 0) return unified * 1000;
-  return now + (parseRetryAfterMs(headers.get("retry-after"), now) ?? fallbackCooldownMs);
+  const resetAt =
+    Number.isFinite(unified) && unified > 0
+      ? unified * 1000
+      : now + (parseRetryAfterMs(headers.get("retry-after"), now) ?? fallbackCooldownMs);
+  return Math.max(resetAt, now + minimumCooldownMs);
 }

@@ -483,6 +483,16 @@ describe("withAccountMetadata", () => {
     expect(JSON.parse(withAccountMetadata(transformedBody(), null)).metadata).toEqual({});
   });
 
+  it("keeps the caller's other metadata fields", () => {
+    const body = transformRequestBody(
+      JSON.stringify({ model: "m", messages: [], metadata: { tag: "kept" } }),
+      context,
+    ).body;
+
+    expect(JSON.parse(withAccountMetadata(body, "second")).metadata.tag).toBe("kept");
+    expect(JSON.parse(withAccountMetadata(body, null)).metadata).toEqual({ tag: "kept" });
+  });
+
   it("leaves a user id chosen by the caller alone", () => {
     const body = JSON.stringify({ model: "m", metadata: { user_id: "caller" } });
 

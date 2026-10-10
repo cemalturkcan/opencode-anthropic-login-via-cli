@@ -46,6 +46,13 @@ describe("rateLimitResetAt", () => {
     expect(rateLimitResetAt(new Headers({ "retry-after": date }), now)).toBe(Date.parse(date));
   });
 
+  it.each([
+    ["a stale unified reset", new Headers({ "anthropic-ratelimit-unified-reset": "1" })],
+    ["retry-after 0", new Headers({ "retry-after": "0" })],
+  ])("keeps at least a thirty second cooldown for %s", (_case, headers) => {
+    expect(rateLimitResetAt(headers, now)).toBe(now + 30_000);
+  });
+
   it("falls back to one minute", () => {
     expect(rateLimitResetAt(new Headers(), now)).toBe(now + 60_000);
   });

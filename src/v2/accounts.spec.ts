@@ -44,6 +44,25 @@ describe("account router", () => {
     expect(await router.failover((await router.select())!, 5_000)).toBeUndefined();
   });
 
+  it("never picks the rate-limited account even when its cooldown has already passed", async () => {
+    const { v2, router } = setup();
+    v2.addAccount("work", oauthCredential("ccs-work", "work"));
+
+    expect((await router.failover((await router.select())!, 0))?.credential.access).toBe("work");
+  });
+
+  it("never resolves api-key connections while looking for an account", async () => {
+    const { v2, router } = setup();
+    v2.addAccount("api", { type: "key", key: "k" } as never);
+    const primary = (await router.select())!;
+    const before = v2.resolveCount();
+
+    await router.failover(primary, 5_000);
+    await router.hasCredentialFrom("oauth");
+
+    expect(v2.resolveCount() - before).toBe(1);
+  });
+
   it("returns to the active account once its cooldown has passed", async () => {
     const { v2, router, advance } = setup();
     v2.addAccount("work", oauthCredential("ccs-work", "work"));
