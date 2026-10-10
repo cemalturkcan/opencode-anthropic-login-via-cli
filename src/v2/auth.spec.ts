@@ -128,7 +128,9 @@ describe("V2 method registration", () => {
     const authorization = await v2.method("claude-browser").authorize({});
     if (authorization.mode !== "code") throw new Error("expected a code authorization");
 
-    expect(await authorization.callback("code#state")).toMatchObject({
+    expect(
+      await authorization.callback(`code#${new URL(authorization.url).searchParams.get("state")}`),
+    ).toMatchObject({
       methodID: "claude-browser",
       access: "browser-access",
     });

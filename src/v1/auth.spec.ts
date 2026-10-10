@@ -86,7 +86,9 @@ describe("createV1Auth methods", () => {
     ).authorize();
     if (authorization.method !== "code") throw new Error("expected a code authorization");
 
-    expect(await authorization.callback("code#state")).toMatchObject({
+    expect(
+      await authorization.callback(`code#${new URL(authorization.url).searchParams.get("state")}`),
+    ).toMatchObject({
       type: "success",
       access: "browser-access",
     });

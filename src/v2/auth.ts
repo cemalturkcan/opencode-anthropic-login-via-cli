@@ -180,10 +180,10 @@ function browserMethod(
     integrationID: "anthropic",
     method: { id: methodId, type: "oauth", label },
     async authorize() {
-      const { url, verifier } = createAuthorizationRequest();
-      const exchange = createCodeExchange(verifier);
+      const authorization = createAuthorizationRequest();
+      const exchange = createCodeExchange(authorization);
       return {
-        url,
+        url: authorization.url,
         instructions: browserInstructions,
         mode: "code",
         async callback(code: string) {

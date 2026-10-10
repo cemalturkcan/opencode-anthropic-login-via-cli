@@ -81,10 +81,10 @@ function browserMethod(): AuthMethod {
     type: "oauth",
     label: browserMethodLabel,
     async authorize() {
-      const { url, verifier } = createAuthorizationRequest();
-      const exchange = createCodeExchange(verifier);
+      const authorization = createAuthorizationRequest();
+      const exchange = createCodeExchange(authorization);
       return {
-        url,
+        url: authorization.url,
         instructions: browserInstructions,
         method: "code",
         callback: (code: string) => toAuthResultOrFailed(exchange(code)),

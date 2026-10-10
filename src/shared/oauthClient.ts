@@ -13,7 +13,8 @@ import { getIntro } from "./introspection.ts";
 import { isJsonNumber, isJsonObject, isJsonString, type JsonValue } from "./json.ts";
 import { log } from "./logger.ts";
 
-export type AuthorizationRequest = { url: string; verifier: string };
+export type AuthorizationRequest = { url: string; verifier: string; state: string };
+export type PendingAuthorization = Pick<AuthorizationRequest, "verifier" | "state">;
 type TokenRequestParams = Record<string, string>;
 
 const refreshesInFlight = new Map<string, Promise<OAuthTokens>>();
@@ -24,6 +25,7 @@ function base64url(buffer: Buffer): string {
 
 export function createAuthorizationRequest(): AuthorizationRequest {
   const verifier = base64url(randomBytes(32));
+  const state = base64url(randomBytes(32));
   const challenge = base64url(createHash("sha256").update(verifier).digest());
   const params = new URLSearchParams({
     code: "true",
@@ -33,9 +35,9 @@ export function createAuthorizationRequest(): AuthorizationRequest {
     scope: oauthScopes,
     code_challenge: challenge,
     code_challenge_method: "S256",
-    state: verifier,
+    state,
   });
-  return { url: `${authorizeUrl}?${params}`, verifier };
+  return { url: `${authorizeUrl}?${params}`, verifier, state };
 }
 
 function codeFromCallbackUrl(input: string): string | null {
@@ -66,6 +68,29 @@ export function parseCallbackCode(raw: string): string {
 
   const hashIndex = trimmed.indexOf("#");
   return hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed;
+}
+
+function stateFromCallbackUrl(input: string): string | null | undefined {
+  try {
+    return new URL(input).searchParams.get("state");
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseCallbackState(raw: string): string | null {
+  const trimmed = raw.trim();
+
+  const urlState = stateFromCallbackUrl(trimmed);
+  if (urlState !== undefined) return urlState;
+
+  const [query, fragment] = trimmed.split("#");
+  if (query.includes("=")) {
+    const queryState = new URLSearchParams(query).get("state");
+    if (queryState !== null) return queryState;
+    return fragment === undefined ? null : new URLSearchParams(fragment).get("state");
+  }
+  return fragment ?? null;
 }
 
 function describeFailure(response: Response, body: string): string {
@@ -107,17 +132,21 @@ async function postTokenRequest(
 
 export async function exchangeCodeForTokens(
   rawCode: string,
-  verifier: string,
+  pending: PendingAuthorization,
   userAgent: string,
 ): Promise<OAuthTokens> {
+  const returnedState = parseCallbackState(rawCode);
+  if (returnedState !== null && returnedState !== pending.state) {
+    throw new Error("OAuth state mismatch: the pasted code belongs to another login attempt");
+  }
   log.info("exchanging authorization code for tokens");
   const tokens = await postTokenRequest(
     {
       grant_type: "authorization_code",
       code: parseCallbackCode(rawCode),
-      code_verifier: verifier,
+      code_verifier: pending.verifier,
       redirect_uri: redirectUri,
-      state: verifier,
+      state: pending.state,
     },
     userAgent,
     "Token exchange failed",
@@ -177,14 +206,18 @@ export function refreshTokensOnce(refreshToken: string): Promise<OAuthTokens> {
   return refresh;
 }
 
-export function createCodeExchange(verifier: string): (code: string) => Promise<OAuthTokens> {
+export function createCodeExchange(
+  authorization: PendingAuthorization,
+): (code: string) => Promise<OAuthTokens> {
   let pending: Promise<OAuthTokens> | null = null;
   return (code) => {
-    pending ??= exchangeCodeForTokens(code, verifier, getIntro().userAgent).catch((failure) => {
-      pending = null;
-      log.error("token exchange failed", { error: String(failure) });
-      throw failure;
-    });
+    pending ??= exchangeCodeForTokens(code, authorization, getIntro().userAgent).catch(
+      (failure) => {
+        pending = null;
+        log.error("token exchange failed", { error: String(failure) });
+        throw failure;
+      },
+    );
     return pending;
   };
 }

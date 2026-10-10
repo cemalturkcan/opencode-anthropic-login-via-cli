@@ -5,6 +5,7 @@ import {
   createAuthorizationRequest,
   createCodeExchange,
   parseCallbackCode,
+  parseCallbackState,
   refreshTokensOnce,
 } from "./oauthClient.ts";
 
@@ -80,15 +81,41 @@ describe("parseCallbackCode", () => {
   });
 });
 
+describe("parseCallbackState", () => {
+  it.each([
+    ["https://platform.claude.com/oauth/code/callback?code=abc&state=xyz", "xyz"],
+    ["code=abc&state=xyz", "xyz"],
+    ["code=abc#state=xyz", "xyz"],
+    ["abc#xyz", "xyz"],
+    ["  abc#xyz  ", "xyz"],
+  ])("reads the state from %p", (input, state) => {
+    expect(parseCallbackState(input)).toBe(state);
+  });
+
+  it.each(["abc", "code=abc", "https://platform.claude.com/oauth/code/callback?code=abc"])(
+    "returns null when %p carries no state",
+    (input) => {
+      expect(parseCallbackState(input)).toBeNull();
+    },
+  );
+});
+
 describe("createAuthorizationRequest", () => {
-  it("builds a pkce authorization url with claude code scopes and the verifier as state", () => {
+  it("builds a pkce authorization url with claude code scopes", () => {
     const { url, verifier } = createAuthorizationRequest();
     const params = new URL(url).searchParams;
 
     expect(params.get("scope")).toBe(oauthScopes);
     expect(params.get("code_challenge_method")).toBe("S256");
-    expect(params.get("state")).toBe(verifier);
     expect(params.get("code_challenge")).not.toBe(verifier);
+  });
+
+  it("uses a state that is independent of the pkce verifier", () => {
+    const { url, verifier, state } = createAuthorizationRequest();
+
+    expect(state).not.toBe(verifier);
+    expect(new URL(url).searchParams.get("state")).toBe(state);
+    expect(url).not.toContain(verifier);
   });
 });
 
@@ -234,11 +261,11 @@ describe("createCodeExchange", () => {
       await Bun.sleep(5);
       return tokenResponse("browser");
     });
-    const exchange = createCodeExchange("verifier");
+    const exchange = createCodeExchange({ verifier: "verifier", state: "state" });
 
     const [first, second] = await Promise.all([
-      exchange("https://platform.claude.com/oauth/code/callback?code=abc&state=verifier"),
-      exchange("abc#verifier"),
+      exchange("https://platform.claude.com/oauth/code/callback?code=abc&state=state"),
+      exchange("abc#state"),
     ]);
 
     expect(codes).toEqual(["abc"]);
@@ -252,9 +279,37 @@ describe("createCodeExchange", () => {
       calls++;
       return calls === 1 ? new Response("bad code", { status: 400 }) : tokenResponse("retry");
     });
-    const exchange = createCodeExchange("verifier");
+    const exchange = createCodeExchange({ verifier: "verifier", state: "state" });
 
     await expect(exchange("wrong")).rejects.toThrow("Token exchange failed: 400: bad code");
     expect((await exchange("right")).access).toBe("retry-access");
   });
+
+  it("sends the verifier and the separate state to the token endpoint", async () => {
+    const bodies: (string | null)[][] = [];
+    replaceFetch((_input, init) => {
+      bodies.push([jsonField(init?.body, "code_verifier"), jsonField(init?.body, "state")]);
+      return tokenResponse("browser");
+    });
+
+    await createCodeExchange({ verifier: "verifier", state: "state" })("abc#state");
+
+    expect(bodies).toEqual([["verifier", "state"]]);
+  });
+
+  it.each(["abc#forged", "https://platform.claude.com/oauth/code/callback?code=abc&state=forged"])(
+    "rejects a pasted code whose state does not match: %p",
+    async (pasted) => {
+      let calls = 0;
+      replaceFetch(() => {
+        calls++;
+        return tokenResponse("browser");
+      });
+
+      await expect(
+        createCodeExchange({ verifier: "verifier", state: "state" })(pasted),
+      ).rejects.toThrow("OAuth state mismatch");
+      expect(calls).toBe(0);
+    },
+  );
 });
