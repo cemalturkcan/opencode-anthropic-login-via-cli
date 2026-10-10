@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { jsonField, replaceFetch, restoreFetchAfterEach, tokenResponse } from "../testing/fetch.ts";
-import { oauthScopes } from "./constants.ts";
+import { oauthScopes, refreshScopes } from "./constants.ts";
 import {
   createAuthorizationRequest,
   createCodeExchange,
@@ -151,8 +151,26 @@ describe("refreshTokensOnce", () => {
       grant_type: "refresh_token",
       refresh_token: "json-refresh",
       client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
-      scope: oauthScopes,
+      scope: refreshScopes,
     });
+  });
+
+  it("never asks a refresh for org:create_api_key, which claude.ai tokens are not granted", () => {
+    expect(refreshScopes).not.toContain("org:create_api_key");
+    expect(oauthScopes).toContain("org:create_api_key");
+  });
+
+  it("retries without a scope when the token was granted fewer scopes", async () => {
+    const scopes: (string | null)[] = [];
+    replaceFetch((_input, init) => {
+      scopes.push(jsonField(init?.body, "scope"));
+      return scopes.length === 1
+        ? Response.json({ error: "invalid_scope" }, { status: 400 })
+        : tokenResponse("narrow");
+    });
+
+    expect((await refreshTokensOnce("narrow-refresh")).access).toBe("narrow-access");
+    expect(scopes).toEqual([refreshScopes, null]);
   });
 
   it("keeps the old refresh token when the response does not rotate it", async () => {

@@ -4,6 +4,7 @@ import {
   oauthClientId,
   oauthScopes,
   redirectUri,
+  refreshScopes,
   tokenUrl,
   type OAuthTokens,
 } from "./constants.ts";
@@ -13,6 +14,7 @@ import { isJsonNumber, isJsonObject, isJsonString, type JsonValue } from "./json
 import { log } from "./logger.ts";
 
 export type AuthorizationRequest = { url: string; verifier: string };
+type TokenRequestParams = Record<string, string>;
 
 const refreshesInFlight = new Map<string, Promise<OAuthTokens>>();
 
@@ -83,7 +85,7 @@ function parseTokenResponse(body: JsonValue, previousRefresh: string | null): OA
 }
 
 async function postTokenRequest(
-  params: Record<string, string>,
+  params: TokenRequestParams,
   userAgent: string,
   failurePrefix: string,
 ): Promise<OAuthTokens> {
@@ -95,7 +97,7 @@ async function postTokenRequest(
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`${failurePrefix}: ${describeFailure(response, body)}`);
+    throw new TokenRequestError(`${failurePrefix}: ${describeFailure(response, body)}`, body);
   }
 
   const tokens = parseTokenResponse(await response.json(), params.refresh_token ?? null);
@@ -124,14 +126,40 @@ export async function exchangeCodeForTokens(
   return tokens;
 }
 
+class TokenRequestError extends Error {
+  constructor(
+    message: string,
+    readonly body: string,
+  ) {
+    super(message);
+  }
+}
+
+function isInvalidScope(failure: Error): boolean {
+  return failure instanceof TokenRequestError && failure.body.includes("invalid_scope");
+}
+
+function refreshParams(refreshToken: string, scope: string | null): TokenRequestParams {
+  const base = { grant_type: "refresh_token", refresh_token: refreshToken };
+  return scope ? { ...base, scope } : base;
+}
+
+async function requestRefresh(refreshToken: string, scope: string | null): Promise<OAuthTokens> {
+  return postTokenRequest(
+    refreshParams(refreshToken, scope),
+    getIntro().userAgent,
+    "Token refresh failed",
+  );
+}
+
 async function refreshTokens(refreshToken: string): Promise<OAuthTokens> {
   log.info("refreshing oauth token");
   try {
-    const tokens = await postTokenRequest(
-      { grant_type: "refresh_token", refresh_token: refreshToken, scope: oauthScopes },
-      getIntro().userAgent,
-      "Token refresh failed",
-    );
+    const tokens = await requestRefresh(refreshToken, refreshScopes).catch((failure: Error) => {
+      if (!isInvalidScope(failure)) throw failure;
+      log.warn("refresh rejected the claude code scopes, retrying with the granted scopes");
+      return requestRefresh(refreshToken, null);
+    });
     log.info("token refresh succeeded");
     return tokens;
   } catch (failure) {
