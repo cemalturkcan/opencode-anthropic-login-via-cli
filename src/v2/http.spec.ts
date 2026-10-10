@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { replaceFetch, restoreFetchAfterEach } from "../testing/fetch.ts";
+import { resetSandbox } from "../testing/fixtures.ts";
 import { createV2Context, oauthCredential } from "../testing/v2Context.ts";
-import { createAccountRouter, type AccountIntegration } from "./accounts.ts";
+import { createAccountRouter, type AccountIntegration, type SelectedAccount } from "./accounts.ts";
 import { setupV2Http } from "./http.ts";
 import type { SubscriptionPricing } from "./pricing.ts";
 
@@ -9,6 +10,7 @@ type RequestEvent = { sessionID?: string; kind: string; request: Request };
 type ResponseEvent = { sessionID?: string; kind: string; request: Request; response: Response };
 
 restoreFetchAfterEach();
+beforeEach(resetSandbox);
 afterEach(() => {
   delete process.env.ANTHROPIC_BASE_URL;
 });
@@ -225,6 +227,74 @@ describe("V2 http.response hook", () => {
     expect(accounts).toEqual(["work-uuid"]);
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('"name": "bash"');
+  });
+
+  it.each([401, 500])("does not replay a %i", async (status) => {
+    const v2 = await setup();
+    v2.addAccount("work", oauthCredential("ccs-work", "work"));
+    let upstreamCalls = 0;
+    replaceFetch(() => {
+      upstreamCalls++;
+      return new Response("ok");
+    });
+    const { request } = await v2.fire<RequestEvent>("http.request", {
+      kind: "primary",
+      request: messagesRequest(),
+    });
+
+    const { response } = await v2.fire<ResponseEvent>("http.response", {
+      kind: "primary",
+      request,
+      response: new Response("failure", { status }),
+    });
+
+    expect(response.status).toBe(status);
+    expect(upstreamCalls).toBe(0);
+  });
+
+  it("replays the exact prepared request for the other account", async () => {
+    const failovers: number[] = [];
+    const work = oauthCredential("ccs-work", "work");
+    const primary = oauthCredential("claude-cli", "primary");
+    const connection = { type: "credential", id: "c", label: "c", method: "oauth" } as never;
+    const router = {
+      select: async () => ({ connection, credential: primary }),
+      failover: async (_failed: SelectedAccount, coolUntil: number) => {
+        failovers.push(coolUntil);
+        return { connection, credential: work };
+      },
+    };
+    const v2 = createV2Context(primary);
+    await setupV2Http(router, (v2.context as { session: never }).session, recordingPricing());
+    const controller = new AbortController();
+    const { request } = await v2.fire<RequestEvent>("http.request", {
+      kind: "primary",
+      request: messagesRequest({ signal: controller.signal }),
+    });
+    const sentBody = JSON.parse(await request.clone().text());
+    let replayed: Request | undefined;
+    replaceFetch((input) => {
+      replayed = input instanceof Request ? input : new Request(input);
+      return new Response("ok");
+    });
+
+    await v2.fire<ResponseEvent>("http.response", {
+      kind: "primary",
+      request,
+      response: new Response("limited", {
+        status: 429,
+        headers: { "anthropic-ratelimit-unified-reset": "2000000000" },
+      }),
+    });
+    const replayedBody = JSON.parse(await replayed!.clone().text());
+
+    expect(failovers).toEqual([2_000_000_000_000]);
+    expect(replayed?.url).toBe(request.url);
+    expect(replayed?.headers.get("authorization")).toBe("Bearer work");
+    expect(replayed?.headers.has("content-length")).toBe(false);
+    expect({ ...replayedBody, metadata: undefined }).toEqual({ ...sentBody, metadata: undefined });
+    controller.abort();
+    expect(replayed?.signal.aborted).toBe(true);
   });
 
   it("keeps a terminal rate limit without switching accounts", async () => {

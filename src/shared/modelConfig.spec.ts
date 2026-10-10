@@ -89,6 +89,14 @@ describe("getBetasForModel", () => {
     },
   );
 
+  it.each(["0", "false", "yes"])("ignores ANTHROPIC_ENABLE_1M_CONTEXT=%s", (value) => {
+    process.env.ANTHROPIC_ENABLE_1M_CONTEXT = value;
+
+    expect(getBetasForModel("claude-sonnet-4-6", claudeCodeBetas)).not.toContain(
+      "context-1m-2025-08-07",
+    );
+  });
+
   it("skips the long-context beta for native 1M models", () => {
     process.env.ANTHROPIC_ENABLE_1M_CONTEXT = "1";
 

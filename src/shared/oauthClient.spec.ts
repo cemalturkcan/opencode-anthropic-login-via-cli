@@ -173,6 +173,30 @@ describe("refreshTokensOnce", () => {
     expect(scopes).toEqual([refreshScopes, null]);
   });
 
+  it("makes a single request when the refresh fails for another reason", async () => {
+    let calls = 0;
+    replaceFetch(() => {
+      calls++;
+      return Response.json({ error: "invalid_grant" }, { status: 400 });
+    });
+
+    await expect(refreshTokensOnce("revoked-refresh")).rejects.toThrow("invalid_grant");
+    expect(calls).toBe(1);
+  });
+
+  it.each([
+    [{ expires_in: 7200 }, 7200],
+    [{}, 3600],
+  ])("computes the expiry in seconds from %p", async (lifetime, seconds) => {
+    replaceFetch(() => Response.json({ access_token: "a", refresh_token: "r", ...lifetime }));
+    const before = Date.now();
+
+    const { expires } = await refreshTokensOnce(`lifetime-${seconds}`);
+
+    expect(expires).toBeGreaterThanOrEqual(before + seconds * 1000);
+    expect(expires).toBeLessThanOrEqual(Date.now() + seconds * 1000);
+  });
+
   it("keeps the old refresh token when the response does not rotate it", async () => {
     replaceFetch(() => Response.json({ access_token: "new-access", expires_in: 3600 }));
 

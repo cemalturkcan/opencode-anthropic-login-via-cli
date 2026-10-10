@@ -18,7 +18,7 @@ import type { SubscriptionPricing } from "./pricing.ts";
 
 type SessionAccess = Pick<V2Plugin.Context["session"], "hook">;
 type TransformedBody = { body: string | undefined; modelId: string | null };
-type SentRequest = { sessionID: string; account: SelectedAccount; body: string | undefined };
+type SentRequest = { account: SelectedAccount; body: string | undefined };
 
 async function transformJsonBody(request: Request, context: BodyContext): Promise<TransformedBody> {
   if (!request.body || !hasJsonContentType(request.headers)) {
@@ -89,11 +89,7 @@ export async function setupV2Http(
     if (response.status !== 429 || record.body === undefined) return response;
     if (isTerminalRateLimit(429, await response.clone().text())) return response;
 
-    const alternative = await router.failover(
-      record.sessionID,
-      record.account,
-      rateLimitResetAt(response.headers),
-    );
+    const alternative = await router.failover(record.account, rateLimitResetAt(response.headers));
     if (!alternative) return response;
     await response.body?.cancel();
     return reportVersionGate(
@@ -105,7 +101,7 @@ export async function setupV2Http(
     "http.request",
     async (event) => {
       const sessionID = String(event.sessionID);
-      const account = await router.select(sessionID);
+      const account = await router.select();
       await pricing.sync(account !== undefined);
       if (!account) return;
 
@@ -114,7 +110,7 @@ export async function setupV2Http(
         account.credential.access,
         claudeSessionId(sessionID),
       );
-      sentRequests.set(prepared.request, { sessionID, account, body: prepared.body });
+      sentRequests.set(prepared.request, { account, body: prepared.body });
       event.request = prepared.request;
     },
     { providerID: "anthropic" },
@@ -134,7 +130,7 @@ export async function setupV2Http(
         return;
       }
 
-      if (!(await router.select(String(event.sessionID)))) return;
+      if (!(await router.select())) return;
       log.debug("response request was not the prepared request, skipping account failover");
       event.response = withUnprefixedToolNames(await reportVersionGate(event.response));
     },

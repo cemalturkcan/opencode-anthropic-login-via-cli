@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { replaceFetch, restoreFetchAfterEach, tokenResponse } from "../testing/fetch.ts";
+import { mkdir, writeFile } from "node:fs/promises";
 import {
   expiredTokens,
   installClaudeStub,
+  installKeychainStub,
+  readInvocations,
   resetSandbox,
   validTokens,
   writeCcsInstance,
@@ -39,6 +42,15 @@ describe("parseCredentialJson", () => {
     expect(parseCredentialJson(raw)?.expires).toBe(0);
   });
 
+  it.each([
+    { accessToken: "", refreshToken: "r" },
+    { refreshToken: "r" },
+    { accessToken: "a", refreshToken: "" },
+    { accessToken: 1, refreshToken: "r" },
+  ])("rejects incomplete credentials %p", (oauth) => {
+    expect(parseCredentialJson(JSON.stringify({ claudeAiOauth: oauth }))).toBeNull();
+  });
+
   it("rejects credentials without a refresh token", () => {
     expect(parseCredentialJson(JSON.stringify({ claudeAiOauth: { accessToken: "a" } }))).toBeNull();
   });
@@ -67,6 +79,28 @@ describe("readClaudeCodeCredentials", () => {
 
   it("returns null when no credentials exist", async () => {
     expect(await readClaudeCodeCredentials()).toBeNull();
+  });
+});
+
+describe("keychain lookup order", () => {
+  it("asks for the user account first, then the Claude Code account, then any account", async () => {
+    await installKeychainStub("nobody", validTokens("never"));
+
+    await readKeychainCredentials();
+
+    expect(await readInvocations("security")).toEqual([
+      "find-generic-password -s Claude Code-credentials -a fixture-user -w",
+      "find-generic-password -s Claude Code-credentials -a Claude Code -w",
+      "find-generic-password -s Claude Code-credentials -w",
+    ]);
+  });
+
+  it("returns the user account entry", async () => {
+    await installKeychainStub("fixture-user", validTokens("user"));
+
+    expect(parseCredentialJson((await readKeychainCredentials()) ?? "")?.access).toBe(
+      "user-access",
+    );
   });
 });
 
@@ -103,6 +137,22 @@ describe("discoverCCSInstances", () => {
     expect((await discoverCCSInstances()).map((instance) => instance.name)).toEqual(["work"]);
   });
 
+  it("lists instances under ~/.ccs/instances/<name>/.credentials.json", async () => {
+    const instance = await writeCcsInstance("work", validTokens("work"));
+
+    expect(instance.credentialsPath).toBe(
+      `${process.env.HOME}/.ccs/instances/work/.credentials.json`,
+    );
+  });
+
+  it("skips directories without credentials and plain files", async () => {
+    await writeCcsInstance("work", validTokens("work"));
+    await mkdir(`${process.env.HOME}/.ccs/instances/empty`, { recursive: true });
+    await writeFile(`${process.env.HOME}/.ccs/instances/notes.txt`, "");
+
+    expect((await discoverCCSInstances()).map((instance) => instance.name)).toEqual(["work"]);
+  });
+
   it("returns an empty list without a ccs directory", async () => {
     expect(await discoverCCSInstances()).toEqual([]);
   });
@@ -123,6 +173,16 @@ describe("resolveCliTokens", () => {
     replaceFetch(() => tokenResponse("refreshed"));
 
     expect((await resolveCliTokens())?.access).toBe("refreshed-access");
+  });
+
+  it("triggers the cli with a cheap haiku print command", async () => {
+    await writeCliCredentials(expiredTokens("stale-cli"));
+    await installClaudeStub(validTokens("triggered"));
+    replaceFetch(() => new Response("invalid_grant", { status: 400 }));
+
+    await resolveCliTokens();
+
+    expect(await readInvocations("claude")).toEqual(["--print --model haiku ping"]);
   });
 
   it("falls back to triggering the cli when the refresh fails", async () => {

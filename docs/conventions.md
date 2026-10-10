@@ -20,7 +20,7 @@ This document owns code, test, tooling and git rules. `AGENTS.md` summarizes the
 - **Colocated specs.** `foo.ts` is tested by `foo.spec.ts` next to it. Test names are behavior sentences.
 - **Deterministic.** Tests run in random order (`bun test --randomize`) and must pass in any order and on repeat.
 - **Real seams, no module mocks.** Use the sandbox fixtures in `src/testing`, `replaceFetch` for HTTP and `createV2Context` for the V2 host. `anti-slop/no-module-mocking` rejects `mock.module`.
-- **Sandbox.** `src/testing/preload.ts` points `HOME` at a temporary directory, restricts `PATH` to a stub directory and disables the debug log, so no test can read real credentials or start the real `claude` binary.
+- **Sandbox.** `src/testing/preload.ts` points `HOME` at a temporary directory, limits `PATH` to stubs plus `which`, rejects non-local `fetch` calls and disables the debug log, so no test can read real credentials, reach the keychain or start the real `claude` binary. `resetSandbox` refuses to touch any directory that is not the sandbox. Source code uses the global `fetch`, never `Bun.fetch`, which cannot be guarded.
 - **Coverage.** `bun run test:coverage` fails below 90% lines or functions for any file.
 
 ## 3. Tooling

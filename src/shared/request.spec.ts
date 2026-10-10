@@ -85,6 +85,21 @@ describe("applyOAuthHeaders", () => {
     expect(openCodeHeaders.filter((name) => headers.has(name))).toEqual([]);
   });
 
+  it("describes this machine like claude code's stainless client", () => {
+    const headers = new Headers();
+
+    applyOAuthHeaders(headers, null, identity);
+
+    expect(headers.get("x-stainless-runtime-version")).toBe("v26.3.0");
+    expect(headers.get("x-stainless-arch")).toBe(process.arch);
+    const expectedOs = new Map([
+      ["linux", "Linux"],
+      ["darwin", "MacOS"],
+      ["win32", "Windows"],
+    ]).get(process.platform);
+    expect(headers.get("x-stainless-os")).toBe(expectedOs ?? `Other:${process.platform}`);
+  });
+
   it("keeps an anthropic-version chosen by the caller", () => {
     const headers = new Headers({ "anthropic-version": "2024-01-01" });
 

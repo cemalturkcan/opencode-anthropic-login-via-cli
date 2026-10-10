@@ -10,26 +10,19 @@ const anthropicLookup = { integrationID: "anthropic" } as IntegrationLookup;
 export type SelectedAccount = { connection: Connection; credential: Credential.OAuth };
 
 export type AccountRouter = {
-  select(sessionID: string): Promise<SelectedAccount | undefined>;
-  failover(
-    sessionID: string,
-    failed: SelectedAccount,
-    coolUntil: number,
-  ): Promise<SelectedAccount | undefined>;
+  select(): Promise<SelectedAccount | undefined>;
+  failover(failed: SelectedAccount, coolUntil: number): Promise<SelectedAccount | undefined>;
 };
 
 function connectionKey(connection: Connection): string {
   return connection.type === "credential" ? connection.id : `env:${connection.name}`;
 }
 
-type Pin = { key: string; from: string; until: number };
-
 export function createAccountRouter(
   integration: AccountIntegration,
   now: () => number = Date.now,
 ): AccountRouter {
   const cooldowns = new Map<string, number>();
-  const pins = new Map<string, Pin>();
 
   const isCooling = (connection: Connection) =>
     (cooldowns.get(connectionKey(connection)) ?? 0) > now();
@@ -78,48 +71,20 @@ export function createAccountRouter(
     return firstUsable(candidates);
   }
 
-  async function pinnedAccount(
-    sessionID: string,
-    activeKey: string,
-  ): Promise<SelectedAccount | undefined> {
-    const pin = pins.get(sessionID);
-    if (!pin) return undefined;
-    if (pin.from !== activeKey || pin.until <= now()) {
-      pins.delete(sessionID);
-      return undefined;
-    }
-
-    const connection = (await oauthConnections()).find((entry) => connectionKey(entry) === pin.key);
-    const account =
-      connection && !isCooling(connection) ? await resolveOAuth(connection) : undefined;
-    if (!account) pins.delete(sessionID);
-    return account;
-  }
-
   return {
-    async select(sessionID) {
+    async select() {
       const active = await activeConnection();
       if (!active) return undefined;
-      const activeKey = connectionKey(active);
-
-      const pinned = await pinnedAccount(sessionID, activeKey);
-      if (pinned) return pinned;
-      if (isCooling(active)) return (await firstHealthy(activeKey)) ?? resolveOAuth(active);
-      return resolveOAuth(active);
+      if (!isCooling(active)) return resolveOAuth(active);
+      return (await firstHealthy(connectionKey(active))) ?? resolveOAuth(active);
     },
 
-    async failover(sessionID, failed, coolUntil) {
+    async failover(failed, coolUntil) {
       const failedKey = connectionKey(failed.connection);
       cooldowns.set(failedKey, coolUntil);
       const alternative = await firstHealthy(failedKey);
       if (!alternative) return undefined;
 
-      const active = await activeConnection();
-      pins.set(sessionID, {
-        key: connectionKey(alternative.connection),
-        from: active ? connectionKey(active) : failedKey,
-        until: coolUntil,
-      });
       log.info("switched anthropic account after a rate limit", {
         from: failedKey,
         to: connectionKey(alternative.connection),

@@ -224,5 +224,5 @@ export async function setupV2Auth(
   });
   await ctx.integration.reload();
 
-  await pricing.sync((await router.select("startup")) !== undefined);
+  await pricing.sync((await router.select()) !== undefined);
 }

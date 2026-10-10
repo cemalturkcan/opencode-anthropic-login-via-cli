@@ -1,4 +1,5 @@
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CCSInstance } from "../shared/credentials.ts";
 import { resetIdentityCache } from "../shared/identity.ts";
@@ -45,11 +46,31 @@ export async function writeCliCredentials(tokens: StoredTokens): Promise<void> {
   await writeExecutable("security", `/bin/cat "${path}"`);
 }
 
+export function invocationLogPath(name: string): string {
+  return join(homeDirectory(), `${name}.invocations`);
+}
+
 export async function installClaudeStub(onRun?: StoredTokens): Promise<void> {
   const refresh = onRun
-    ? `printf '%s' '${credentialJson(onRun)}' > "${claudeCredentialsPath()}"`
+    ? `/bin/mkdir -p "${join(claudeCredentialsPath(), "..")}"\nprintf '%s' '${credentialJson(onRun)}' > "${claudeCredentialsPath()}"`
     : "true";
-  await writeExecutable("claude", `${refresh}\nexit 0`);
+  await writeExecutable(
+    "claude",
+    `echo "$*" >> "${invocationLogPath("claude")}"\n${refresh}\nexit 0`,
+  );
+}
+
+export async function installKeychainStub(account: string, tokens: StoredTokens): Promise<void> {
+  await writeExecutable(
+    "security",
+    `echo "$*" >> "${invocationLogPath("security")}"\ncase "$*" in *"-a ${account} "*) printf '%s' '${credentialJson(tokens)}';; *) exit 44;; esac`,
+  );
+}
+
+export async function readInvocations(name: string): Promise<string[]> {
+  const file = Bun.file(invocationLogPath(name));
+  if (!(await file.exists())) return [];
+  return (await file.text()).trim().split("\n").filter(Boolean);
 }
 
 export async function installClaudeBinary(version: string): Promise<void> {
@@ -67,10 +88,21 @@ export async function writeCcsInstance(name: string, tokens: StoredTokens): Prom
   return { name, credentialsPath };
 }
 
+export function assertSandboxHome(home: string): void {
+  const sandbox = process.env.TEST_SANDBOX_HOME;
+  if (!sandbox || home !== sandbox || !home.startsWith(tmpdir())) {
+    throw new Error(`refusing to touch ${home || "an empty HOME"}: it is not the test sandbox`);
+  }
+}
+
 export async function resetSandbox(): Promise<void> {
+  assertSandboxHome(homeDirectory());
   resetIdentityCache();
   await rm(join(homeDirectory(), ".claude"), { recursive: true, force: true });
   await rm(join(homeDirectory(), ".ccs"), { recursive: true, force: true });
+  await rm(invocationLogPath("claude"), { force: true });
+  await rm(invocationLogPath("security"), { force: true });
   await rm(stubBin(), { recursive: true, force: true });
   await mkdir(stubBin(), { recursive: true });
+  await writeExecutable("security", "exit 44");
 }

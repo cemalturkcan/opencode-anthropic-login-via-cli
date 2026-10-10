@@ -25,6 +25,24 @@ describe("transformRequestBody", () => {
     expect(modelId).toBe("claude-sonnet-4-20250514");
   });
 
+  it("replaces the legacy claude code identity with the agent sdk identity", () => {
+    const input = JSON.stringify({
+      model: "m",
+      system: [
+        { type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." },
+        { type: "text", text: "Rules." },
+      ],
+      messages: [],
+    });
+
+    const parsed = JSON.parse(transformRequestBody(input).body);
+
+    expect(parsed.system.map((block: { text: string }) => block.text)).toEqual([
+      "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+      "Rules.",
+    ]);
+  });
+
   it("prefixes the forced tool name in tool_choice", () => {
     const input = JSON.stringify({
       model: "claude-sonnet-4-20250514",
@@ -357,6 +375,18 @@ describe("prompt cache ttl", () => {
     expect(parsed.messages[0].content[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
   });
 
+  it("leaves non-ephemeral cache control untouched", () => {
+    const body = JSON.stringify({
+      model: "m",
+      system: [{ type: "text", text: "Rules.", cache_control: { type: "persistent" } }],
+      messages: [],
+    });
+
+    expect(JSON.parse(transformRequestBody(body).body).system.at(-1).cache_control).toEqual({
+      type: "persistent",
+    });
+  });
+
   it("keeps an explicit ttl", () => {
     const body = JSON.stringify({
       model: "m",
@@ -409,6 +439,12 @@ describe("request metadata", () => {
       account_uuid: "account",
       session_id: "session",
     });
+  });
+
+  it("keeps the caller's other metadata fields", () => {
+    const body = JSON.stringify({ model: "m", messages: [], metadata: { tag: "kept" } });
+
+    expect(JSON.parse(transformRequestBody(body, context).body).metadata.tag).toBe("kept");
   });
 
   it("keeps a user id chosen by the caller", () => {

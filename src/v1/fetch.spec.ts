@@ -3,6 +3,7 @@ import { replaceFetch, restoreFetchAfterEach, tokenResponse } from "../testing/f
 import {
   expiredTokens,
   installClaudeStub,
+  readInvocations,
   resetSandbox,
   validTokens,
   writeCcsInstance,
@@ -300,6 +301,51 @@ describe("createCustomFetch", () => {
     );
 
     expect(authorizations).toEqual(["Bearer current-access", "Bearer work-access"]);
+  });
+
+  it("never starts the cli for a rate limit", async () => {
+    await installClaudeStub(validTokens("triggered"));
+    replaceFetch(() => new Response("rate limited", { status: 429 }));
+
+    await createCustomFetch(async () => freshAuth(), recordingStore())(
+      "https://api.anthropic.com/v1/messages",
+      jsonPost(),
+    );
+
+    expect(await readInvocations("claude")).toEqual([]);
+  });
+
+  it("starts the cli for a 401 when no alternate account exists", async () => {
+    await installClaudeStub(validTokens("triggered"));
+    let calls = 0;
+    replaceFetch(() => {
+      calls++;
+      return calls === 1 ? new Response("unauthorized", { status: 401 }) : new Response("ok");
+    });
+
+    const response = await createCustomFetch(async () => freshAuth(), recordingStore())(
+      "https://api.anthropic.com/v1/messages",
+      jsonPost(),
+    );
+
+    expect(await readInvocations("claude")).toEqual(["--print --model haiku ping"]);
+    expect(await response.text()).toBe("ok");
+  });
+
+  it("keeps tls verification on without ANTHROPIC_INSECURE", async () => {
+    process.env.ANTHROPIC_BASE_URL = "https://proxy.example.com";
+    let sent: SentRequest | undefined;
+    replaceFetch(async (input, init) => {
+      sent = await record(input, init);
+      return new Response("ok");
+    });
+
+    await createCustomFetch(async () => freshAuth(), recordingStore())(
+      "https://api.anthropic.com/v1/messages",
+      jsonPost(),
+    );
+
+    expect(sent?.init?.tls).toBeUndefined();
   });
 
   it("returns a terminal 429 without switching accounts", async () => {

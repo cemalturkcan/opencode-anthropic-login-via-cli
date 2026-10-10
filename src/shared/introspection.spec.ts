@@ -58,8 +58,21 @@ describe("compareVersions", () => {
 });
 
 describe("reportedVersion", () => {
-  it("reports the default when no cli is installed", () => {
-    expect(reportedVersion(null)).toBe(defaultCliVersion);
+  it("reports 2.1.296, the version captured from claude code, when no cli is installed", () => {
+    expect(defaultCliVersion).toBe("2.1.296");
+    expect(reportedVersion(null)).toBe("2.1.296");
+  });
+
+  it("raises an installed 2.1.295 to the floor and keeps 2.1.296 and 2.1.297", () => {
+    expect(reportedVersion("2.1.295")).toBe("2.1.296");
+    expect(reportedVersion("2.1.296")).toBe("2.1.296");
+    expect(reportedVersion("2.1.297")).toBe("2.1.297");
+  });
+
+  it("lets ANTHROPIC_CLI_VERSION override the floor too", () => {
+    process.env.ANTHROPIC_CLI_VERSION = "2.0.0";
+
+    expect(reportedVersion(null)).toBe("2.0.0");
   });
 
   it("never reports a version older than the default", () => {
