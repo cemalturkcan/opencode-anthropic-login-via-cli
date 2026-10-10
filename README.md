@@ -82,7 +82,7 @@ Run `bun run build` and point OpenCode at the output. OpenCode V1 takes the file
 | Browser | Claude Pro/Max (browser) | OAuth flow via claude.com with PKCE                     |
 | API Key | API Key (manual)         | Standard Anthropic API key                              |
 
-On OpenCode V2 the plugin also registers **Claude Pro/Max (migrated from OpenCode V1)**. It exists so OAuth credentials imported from V1 keep refreshing; new logins should use one of the methods above.
+When OpenCode V2 has imported an Anthropic login from V1, the plugin also registers **Claude Pro/Max (migrated from OpenCode V1)** so that login keeps refreshing. It is hidden when there is no such login; new logins should use one of the methods above.
 
 ## Environment Variables
 

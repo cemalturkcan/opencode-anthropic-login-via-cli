@@ -201,14 +201,16 @@ function browserMethod(
 export function oauthMethods(
   instances: CCSInstance[],
   pricing: SubscriptionPricing,
+  hasMigratedV1Credential: boolean,
 ): MethodRegistration[] {
   const onConnected = () => pricing.sync(true);
-  return [
+  const methods = [
     cliMethod(onConnected),
     ...instances.map((instance) => ccsMethod(instance, onConnected)),
     browserMethod(browserMethodId, browserMethodLabel, onConnected),
-    browserMethod(migratedV1MethodId, migratedV1MethodLabel, onConnected),
   ];
+  if (!hasMigratedV1Credential) return methods;
+  return [...methods, browserMethod(migratedV1MethodId, migratedV1MethodLabel, onConnected)];
 }
 
 export async function setupV2Auth(
@@ -219,8 +221,11 @@ export async function setupV2Auth(
   const router = createAccountRouter(ctx.integration);
   await setupV2Http(router, ctx.session, pricing);
 
+  const hasMigratedV1Credential = await router.hasCredentialFrom(migratedV1MethodId);
   await ctx.integration.transform((editor) => {
-    for (const method of oauthMethods(instances, pricing)) editor.method.update(method);
+    for (const method of oauthMethods(instances, pricing, hasMigratedV1Credential)) {
+      editor.method.update(method);
+    }
   });
   await ctx.integration.reload();
 

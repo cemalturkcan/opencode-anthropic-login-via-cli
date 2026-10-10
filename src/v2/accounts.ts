@@ -10,6 +10,7 @@ const anthropicLookup = { integrationID: "anthropic" } as IntegrationLookup;
 export type SelectedAccount = { connection: Connection; credential: Credential.OAuth };
 
 export type AccountRouter = {
+  hasCredentialFrom(methodID: string): Promise<boolean>;
   select(): Promise<SelectedAccount | undefined>;
   failover(failed: SelectedAccount, coolUntil: number): Promise<SelectedAccount | undefined>;
 };
@@ -71,7 +72,18 @@ export function createAccountRouter(
     return firstUsable(candidates);
   }
 
+  async function usesMethod(methodID: string, candidates: Connection[]): Promise<boolean> {
+    const [next, ...rest] = candidates;
+    if (!next) return false;
+    if ((await resolveOAuth(next))?.credential.methodID === methodID) return true;
+    return usesMethod(methodID, rest);
+  }
+
   return {
+    async hasCredentialFrom(methodID) {
+      return usesMethod(methodID, await oauthConnections());
+    },
+
     async select() {
       const active = await activeConnection();
       if (!active) return undefined;

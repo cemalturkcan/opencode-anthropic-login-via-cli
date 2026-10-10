@@ -91,6 +91,14 @@ describe("account router", () => {
     expect(v2.resolveCount() - before).toBe(1);
   });
 
+  it("detects a credential created by a given method", async () => {
+    const { v2, router } = setup();
+    v2.addAccount("imported", oauthCredential("oauth", "imported"));
+
+    expect(await router.hasCredentialFrom("oauth")).toBe(true);
+    expect(await router.hasCredentialFrom("ccs-missing")).toBe(false);
+  });
+
   it("treats a failing connection lookup as no account", async () => {
     const { integration } = setup();
     const failing: AccountIntegration = {

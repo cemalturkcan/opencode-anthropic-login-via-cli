@@ -57,7 +57,7 @@ V1 retries 401, 429 and 529 once with alternate CLI or CCS credentials. V2 repla
 - **Prompt caching uses the one hour TTL** like Claude Code on subscriptions. `ANTHROPIC_PROMPT_CACHE_TTL=5m` opts out. No keep-alive requests are sent.
 - **Refreshes are deduplicated per refresh token,** so concurrent refreshes of different accounts never share a result.
 - **V2 pricing follows the active connection** on every request, so switching between OAuth and an API key updates displayed costs.
-- **The migrated V1 method id `oauth`** stays registered so credentials imported from V1 keep refreshing.
+- **The migrated V1 method id `oauth`** is registered only when V2 holds a credential imported from V1, so that credential keeps refreshing without cluttering the login picker.
 - **`ANTHROPIC_INSECURE` works only on V1.** V2 performs the fetch itself and exposes no TLS option to plugins.
 
 ## Environment variables

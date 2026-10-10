@@ -258,6 +258,7 @@ describe("V2 http.response hook", () => {
     const primary = oauthCredential("claude-cli", "primary");
     const connection = { type: "credential", id: "c", label: "c", method: "oauth" } as never;
     const router = {
+      hasCredentialFrom: async () => false,
       select: async () => ({ connection, credential: primary }),
       failover: async (_failed: SelectedAccount, coolUntil: number) => {
         failovers.push(coolUntil);

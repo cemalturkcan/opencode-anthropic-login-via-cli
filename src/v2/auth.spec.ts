@@ -18,8 +18,9 @@ beforeEach(resetSandbox);
 
 const rejectedRefresh = () => new Response("invalid_grant", { status: 400 });
 
-async function setup(credential?: Credential.Value) {
+async function setup(credential?: Credential.Value, migrated = false) {
   const v2 = createV2Context(credential);
+  if (migrated) v2.addAccount("imported", oauthCredential("oauth", "imported"));
   const instance = await writeCcsInstance("work", validTokens("work"));
   await setupV2Auth(v2.context, [instance]);
   const method = (id: string) => {
@@ -49,8 +50,20 @@ async function autoCredential(registration: IntegrationOAuthMethodRegistration) 
 }
 
 describe("V2 method registration", () => {
+  it("registers the migrated V1 method only when a credential imported from V1 exists", async () => {
+    const v2 = await setup(undefined, true);
+
+    expect([...v2.methods.keys()]).toContain("oauth");
+  });
+
+  it("hides the migrated V1 method when nothing was imported from V1", async () => {
+    const v2 = await setup(oauthCredential("claude-cli"));
+
+    expect([...v2.methods.keys()]).toEqual(["key", "claude-cli", "ccs-work", "claude-browser"]);
+  });
+
   it("registers cli, ccs, browser and migrated V1 methods and keeps the api key method", async () => {
-    const v2 = await setup();
+    const v2 = await setup(undefined, true);
 
     expect([...v2.methods.keys()]).toEqual([
       "key",
@@ -148,7 +161,7 @@ describe("V2 refresh", () => {
     async (methodID) => {
       await writeCliCredentials(validTokens("cli"));
       replaceFetch(rejectedRefresh);
-      const v2 = await setup();
+      const v2 = await setup(undefined, true);
 
       expect(await v2.method(methodID).refresh(staleCredential(methodID))).toMatchObject({
         methodID,
