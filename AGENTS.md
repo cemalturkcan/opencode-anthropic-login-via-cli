@@ -1,34 +1,25 @@
-# Agent Guide
+# Agent guide
 
-> Read `.ai/` files for detailed context.
+`docs/conventions.md` owns code, test and git rules. `docs/architecture.md` owns module boundaries and request flow. This file is the entry point; when the documents disagree, the owning document wins.
 
-**Project**: OpenCode plugin for Anthropic OAuth (Claude Pro/Max)
-**Stack**: TypeScript, Bun, @opencode-ai/plugin SDK
-**Platform**: Linux, macOS, Windows
+## Project
+
+- OpenCode plugin that serves Anthropic models through a Claude Pro/Max OAuth subscription by sending requests the way Claude Code does.
+- One package supports OpenCode V1 (`server` hook, `@opencode-ai/plugin`) and V2 (`setup`, `@opencode/plugin`) from a single default export.
+- TypeScript on Bun, bundled with `bun build`, linted with oxlint and the vendored anti-slop plugin, formatted with oxfmt.
 
 ## Commands
 
-```bash
-bun run build       # bundle + emit declarations
-bun run typecheck   # tsc --noEmit
-bun run test        # bun test
-bun run lint        # oxlint + oxfmt --check
-bun run lint:fix    # auto-fix lint + format
-bun run format      # oxfmt --write
-```
+- `bun run check` is the single quality gate: format check, lint, typecheck, build and tests with coverage. Run it before handoff; it must pass and must not change tracked files.
+- `bun run fmt` formats, `bun run lint` lints, `bun run typecheck` typechecks, `bun run test` runs the tests in random order.
 
-## Context Files
+## Non-negotiable rules
 
-- Rules: `.ai/RULES.md`
-- Architecture: `.ai/ARCHITECTURE.md`
-
-## Critical Rules
-
-1. No decorative comments, section dividers, or ASCII art
-2. Comments only when the why is non-obvious
-3. No AI patterns in code, comments, commits, or PR descriptions — match the repo's existing commit style
-4. All code and comments in English
-5. Run `bun run typecheck && bun run build && bun run lint` before completing any task
-6. `context-1m-2025-08-07` must never be in default betas — it breaks OAuth
-7. Logging goes through `src/logger.ts`, never raw console.log
-8. Empty catch blocks are only acceptable when failure is explicitly expected and harmless
+- Write no comments. The `anti-slop/no-comments` lint rule enforces it; only lint directives are allowed.
+- Work test first. Every behavior change and every bug fix starts with a failing test that reproduces it.
+- Tests never touch the real home directory, credentials, network or `claude` binary; `src/testing/preload.ts` sandboxes them.
+- Log through `src/shared/logger.ts` only. Messages are plain lowercase English without emoji; context goes into structured fields.
+- Never add `context-1m-2025-08-07` to the default betas. It breaks OAuth requests.
+- Keep every dependency, tool, runtime and CI action pinned to an exact version or commit.
+- Keep code, commits and durable artifacts in English.
+- Do not commit, branch, push, reset or revert unless the user explicitly asks for that operation.

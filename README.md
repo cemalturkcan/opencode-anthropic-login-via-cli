@@ -1,6 +1,6 @@
 # OpenCode Anthropic Auth
 
-[OpenCode](https://github.com/sst/opencode) plugin that lets you use Anthropic models with your Claude Pro/Max subscription. No API key required.
+[OpenCode](https://opencode.ai) plugin that lets you use Anthropic models with your Claude Pro/Max subscription. No API key required.
 
 ## Features
 
@@ -59,7 +59,7 @@ OpenCode caches plugin packages in `~/.cache/opencode/node_modules/`. If you pin
 rm -rf ~/.cache/opencode/node_modules/
 ```
 
-Then restart OpenCode — it will re-download the plugin on next launch.
+Then restart OpenCode. It re-downloads the plugin on the next launch.
 
 ## Auth Methods
 
@@ -69,6 +69,22 @@ Then restart OpenCode — it will re-download the plugin on next launch.
 | CCS     | CCS (_instance-name_)    | Auto-detects each CCS instance in `~/.ccs/instances/`   |
 | Browser | Claude Pro/Max (browser) | OAuth flow via claude.com with PKCE                     |
 | API Key | API Key (manual)         | Standard Anthropic API key                              |
+
+On OpenCode V2 the plugin also registers **Claude Pro/Max (migrated from OpenCode V1)**. It exists so OAuth credentials imported from V1 keep refreshing; new logins should use one of the methods above.
+
+## Environment Variables
+
+| Variable                      | Purpose                                                  |
+| ----------------------------- | -------------------------------------------------------- |
+| `CLAUDE_AUTH_DEBUG`           | `0` or `false` disables the debug log                    |
+| `ANTHROPIC_ENABLE_1M_CONTEXT` | Opt in to long-context betas                             |
+| `ANTHROPIC_BETA_FLAGS`        | Replace the beta flags (comma-separated)                 |
+| `ANTHROPIC_CLI_VERSION`       | Override the detected CLI version                        |
+| `ANTHROPIC_USER_AGENT`        | Override the user agent                                  |
+| `ANTHROPIC_BASE_URL`          | Send requests to another origin, such as a local proxy   |
+| `ANTHROPIC_INSECURE`          | Skip TLS verification for `ANTHROPIC_BASE_URL` (V1 only) |
+
+The debug log is written to `~/.local/share/opencode/claude-auth-debug.log`.
 
 ## License
 
