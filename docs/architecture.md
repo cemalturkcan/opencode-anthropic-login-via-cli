@@ -21,6 +21,7 @@ src/
     modelConfig.ts  beta flags and per-model overrides
     oauthClient.ts  pkce, code exchange and per-token refresh dedupe
     paths.ts        home-relative paths
+    process.ts      child processes with a hidden windows console
     proxy.ts        ANTHROPIC_BASE_URL rewrite and beta query parameter
     rateLimit.ts    terminal rate limits, version gate and reset times
     request.ts      claude code headers and beta merging
