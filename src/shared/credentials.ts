@@ -1,15 +1,13 @@
-import { execFile } from "node:child_process";
 import { access, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { claudeCommand, isMac, refreshBufferMs, type OAuthTokens } from "./constants.ts";
 import { findClaudeBinary } from "./introspection.ts";
 import { isJsonNumber, isJsonObject, isJsonString, parseJson } from "./json.ts";
 import { log } from "./logger.ts";
 import { refreshTokensOnce } from "./oauthClient.ts";
 import { ccsInstancesDirectory, claudeCredentialsPath } from "./paths.ts";
+import { runCommand } from "./process.ts";
 
-const execFileAsync = promisify(execFile);
 const keychainService = "Claude Code-credentials";
 
 export type CCSInstance = { name: string; credentialsPath: string };
@@ -37,7 +35,7 @@ async function readKeychainEntry(account?: string): Promise<string | null> {
   if (account) args.push("-a", account);
   args.push("-w");
   try {
-    const { stdout } = await execFileAsync("security", args);
+    const { stdout } = await runCommand("security", args);
     return stdout.trim() || null;
   } catch {
     return null;
@@ -76,7 +74,7 @@ export function readCCSCredentials(instance: CCSInstance): Promise<OAuthTokens |
 export async function refreshViaClaudeCli(): Promise<OAuthTokens | null> {
   log.info("triggering claude cli refresh");
   try {
-    await execFileAsync(claudeCommand, ["--print", "--model", "haiku", "ping"], {
+    await runCommand(claudeCommand, ["--print", "--model", "haiku", "ping"], {
       timeout: 30_000,
       env: { ...process.env, TERM: "dumb" },
     });

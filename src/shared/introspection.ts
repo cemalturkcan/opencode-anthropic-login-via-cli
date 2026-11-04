@@ -1,14 +1,12 @@
-import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { claudeCommand, defaultCliVersion, isWindows, type CliIdentity } from "./constants.ts";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.ts";
 import { log } from "./logger.ts";
 import { getCliVersion, getUserAgent } from "./modelConfig.ts";
 import { homeDirectory } from "./paths.ts";
+import { runCommand } from "./process.ts";
 
-const execFileAsync = promisify(execFile);
 const npmRegistryUrl = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
 
 export function parseVersion(output: string): string | null {
@@ -60,7 +58,7 @@ export async function findClaudeBinary(): Promise<string | null> {
   }
 
   try {
-    const { stdout } = await execFileAsync(isWindows ? "where" : "which", [claudeCommand], {
+    const { stdout } = await runCommand(isWindows ? "where" : "which", [claudeCommand], {
       timeout: 3000,
     });
     return stdout.trim().split(/\r?\n/)[0]?.trim() || null;
@@ -72,7 +70,7 @@ export async function findClaudeBinary(): Promise<string | null> {
 
 async function detectInstalledVersion(): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync(claudeCommand, ["--version"], { timeout: 5000 });
+    const { stdout } = await runCommand(claudeCommand, ["--version"], { timeout: 5000 });
     return parseVersion(stdout);
   } catch (failure) {
     log.info("claude cli version unavailable, using the default", { error: String(failure) });
